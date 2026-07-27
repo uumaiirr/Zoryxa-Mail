@@ -1,0 +1,47 @@
+# Free scheduler for the CEO Mail Agent.
+# Runs hourly: keeps the inbox synced/summarized, keeps Supabase awake, and the
+# digest endpoint itself decides whether it's digest hour in the configured
+# timezone (so the send time is changeable from the app's Settings screen
+# without touching this file).
+#
+# Required repository secrets (Settings → Secrets and variables → Actions):
+#   SITE_URL     e.g. https://ceo-mail.netlify.app   (no trailing slash)
+#   CRON_SECRET  same value as the CRON_SECRET env var on Netlify
+#
+# Note: GitHub cron is best-effort — runs can be delayed by a few minutes.
+# On public repos this is free without limits; on private repos it uses the
+# 2,000 free minutes/month (this job needs ~2 min/day).
+
+name: mail-agent-scheduler
+
+on:
+  schedule:
+    - cron: '7 * * * *' # hourly at :07 (offset avoids GitHub's top-of-hour congestion)
+  workflow_dispatch: {}
+
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Sync inbox (fetch + summarize new mail)
+        run: |
+          curl -sS --fail-with-body --max-time 90 --retry 3 --retry-all-errors \
+            -X POST "$SITE_URL/api/sync" \
+            -H "x-cron-secret: $CRON_SECRET" \
+            -H "Content-Type: application/json" \
+            -d '{"force": true}'
+        env:
+          SITE_URL: ${{ secrets.SITE_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+
+      - name: Morning digest (no-op unless it is digest hour in the app's timezone)
+        run: |
+          curl -sS --fail-with-body --max-time 120 --retry 3 --retry-all-errors \
+            -X POST "$SITE_URL/api/digest/run" \
+            -H "x-cron-secret: $CRON_SECRET" \
+            -H "Content-Type: application/json" \
+            -d '{}'
+        env:
+          SITE_URL: ${{ secrets.SITE_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}

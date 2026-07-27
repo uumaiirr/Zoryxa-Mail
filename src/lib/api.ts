@@ -1,0 +1,92 @@
+import type {
+  AppSettings,
+  AuthStatus,
+  DigestRecord,
+  DraftResult,
+  EmailDetail,
+  EmailSummary,
+  SyncResult,
+} from '../../shared/types'
+
+export class ApiError extends Error {
+  constructor(
+    public status: number,
+    message: string,
+  ) {
+    super(message)
+  }
+}
+
+async function j<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(path, {
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    ...init,
+  })
+  if (res.status === 401 && !window.location.pathname.startsWith('/login')) {
+    // Session is gone — purge cached API responses so nothing readable
+    // outlives the login (defense in depth for shared/lost devices).
+    if ('caches' in window) void caches.delete('api-cache').catch(() => {})
+    window.location.assign('/login')
+    throw new ApiError(401, 'Not signed in')
+  }
+  if (!res.ok) {
+    let message = `Request failed (${res.status})`
+    try {
+      const data = (await res.json()) as { error?: string }
+      if (data.error) message = data.error
+    } catch {
+      /* non-JSON error body */
+    }
+    throw new ApiError(res.status, message)
+  }
+  return (await res.json()) as T
+}
+
+const qs = (params: Record<string, string | number | undefined>) => {
+  const u = new URLSearchParams()
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== undefined && v !== '') u.set(k, String(v))
+  }
+  const s = u.toString()
+  return s ? `?${s}` : ''
+}
+
+export const api = {
+  login: (passcode: string) =>
+    j<{ ok: true }>('/api/login', { method: 'POST', body: JSON.stringify({ passcode }) }),
+
+  authStatus: () => j<AuthStatus>('/api/auth/status'),
+
+  emails: (params: { category?: string; limit?: number; before?: string } = {}) =>
+    j<EmailSummary[]>(`/api/emails${qs(params)}`),
+
+  email: (gmailId: string) => j<EmailDetail>(`/api/emails/${encodeURIComponent(gmailId)}`),
+
+  sync: (force = false) =>
+    j<SyncResult>('/api/sync', { method: 'POST', body: JSON.stringify({ force }) }),
+
+  draftReply: (gmailId: string, instruction?: string) =>
+    j<DraftResult>('/api/draft/reply', {
+      method: 'POST',
+      body: JSON.stringify({ gmailId, instruction }),
+    }),
+
+  draftCompose: (instruction: string) =>
+    j<DraftResult>('/api/draft/compose', { method: 'POST', body: JSON.stringify({ instruction }) }),
+
+  send: (payload: { to: string; cc?: string; subject: string; body: string; replyToGmailId?: string }) =>
+    j<{ ok: true; id: string }>('/api/send', { method: 'POST', body: JSON.stringify(payload) }),
+
+  digestToday: () => j<{ digest: DigestRecord | null }>('/api/digest/today'),
+
+  digestRun: () => j<{ ok: boolean; sent: boolean }>('/api/digest/run', { method: 'POST', body: '{}' }),
+
+  settings: () => j<AppSettings>('/api/settings'),
+
+  saveSettings: (s: AppSettings) =>
+    j<AppSettings>('/api/settings', { method: 'PUT', body: JSON.stringify(s) }),
+
+  styleRefresh: () =>
+    j<{ ok: true; sampleCount: number }>('/api/style/refresh', { method: 'POST', body: '{}' }),
+}

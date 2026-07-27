@@ -1,0 +1,14 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
+
+# SPA fallback — Netlify Function routes (declared via `config.path` in each
+# function) are matched before redirects, so /api/* is never shadowed.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
