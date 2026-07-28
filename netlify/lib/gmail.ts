@@ -25,8 +25,8 @@ export function oauthStartUrl(state: string): string {
   return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`
 }
 
-/** Exchanges the consent code and stores/updates the Gmail account. */
-export async function exchangeCodeAndStore(code: string): Promise<string> {
+/** Exchanges the consent code and stores/updates the Gmail account for one user. */
+export async function exchangeCodeAndStore(userId: string, code: string): Promise<string> {
   const res = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -55,7 +55,7 @@ export async function exchangeCodeAndStore(code: string): Promise<string> {
     throw new HttpError(502, `Could not read the Gmail profile (${profileRes.status})`)
   }
   const profile = (await profileRes.json()) as { emailAddress: string }
-  await upsertGmailAccount(profile.emailAddress, data.refresh_token)
+  await upsertGmailAccount(userId, profile.emailAddress, data.refresh_token)
   return profile.emailAddress
 }
 

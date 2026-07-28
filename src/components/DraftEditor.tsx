@@ -22,6 +22,18 @@ export default function DraftEditor(props: {
 
   return (
     <div className="card p-4 space-y-3">
+      <div className="flex items-center gap-1.5 text-[11px] font-display font-bold tracking-[0.2em] text-golddeep">
+        <svg
+          viewBox="0 0 24 24"
+          className="w-3.5 h-3.5"
+          fill="currentColor"
+          aria-hidden="true"
+        >
+          <path d="M12 2.5 13.9 9.6 21 11.5l-7.1 1.9L12 20.5l-1.9-7.1L3 11.5l7.1-1.9L12 2.5Z" />
+          <path d="M19 2.5l.7 2.3 2.3.7-2.3.7L19 8.5l-.7-2.3-2.3-.7 2.3-.7.7-2.3Z" />
+        </svg>
+        DRAFTED IN YOUR VOICE
+      </div>
       <label className="block space-y-1.5">
         <span className={labelClass}>To</span>
         <input

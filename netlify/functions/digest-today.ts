@@ -11,15 +11,15 @@ function dateIn(timezone: string, d: Date): string {
 
 export default handle(async (req) => {
   if (req.method !== 'GET') return json({ error: 'Method not allowed' }, 405)
-  requireSession(req)
+  const userId = requireSession(req)
 
-  const settings = await getSettings()
+  const settings = await getSettings(userId)
   const today = todayIn(settings.timezone)
 
-  let digest = await getDigest(today)
+  let digest = await getDigest(userId, today)
   if (!digest) {
     const yesterday = dateIn(settings.timezone, new Date(Date.now() - 86400000))
-    digest = await getDigest(yesterday)
+    digest = await getDigest(userId, yesterday)
   }
 
   return json({ digest: digest ?? null })

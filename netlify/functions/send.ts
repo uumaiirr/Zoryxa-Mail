@@ -27,7 +27,7 @@ function assertAddresses(raw: string, label: string): void {
 // only ever runs from an explicit user confirmation in the UI.
 export default handle(async (req) => {
   if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
-  requireSession(req)
+  const userId = requireSession(req)
 
   const body = await readJson<{
     to: string
@@ -66,10 +66,8 @@ export default handle(async (req) => {
   } = {}
 
   if (typeof body.replyToId === 'string' && body.replyToId.trim() !== '') {
-    const original = await store.getEmail(body.replyToId)
-    if (!original) throw new HttpError(404, 'Original email not found')
-    acc = await accounts.getAccount(original.accountId)
-    if (!acc) throw new HttpError(404, 'Mail account not found')
+    const original = await store.getUserEmail(body.replyToId, userId)
+    acc = await accounts.getUserAccount(original.accountId, userId)
     try {
       threading = await mailbox.getThreading(acc, store.providerIdOf(original))
     } catch (e) {
@@ -80,8 +78,7 @@ export default handle(async (req) => {
     if (typeof body.fromAccountId !== 'string' || body.fromAccountId.trim() === '') {
       throw new HttpError(400, 'Choose which account to send from')
     }
-    acc = await accounts.getAccount(body.fromAccountId)
-    if (!acc) throw new HttpError(404, 'Mail account not found')
+    acc = await accounts.getUserAccount(body.fromAccountId, userId)
   }
 
   const r = await mailbox.sendFrom(acc, {

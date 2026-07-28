@@ -4,6 +4,7 @@ import type { AppSettings, DigestRecord } from '../../shared/types'
 import { api, ApiError } from '../lib/api'
 import TopBar from '../components/TopBar'
 import EmptyState from '../components/EmptyState'
+import ZoryxaLogo from '../components/ZoryxaLogo'
 
 function formatLongDate(ymd: string): string {
   const d = new Date(`${ymd}T00:00:00`)
@@ -32,11 +33,20 @@ function formatDeadlineDate(s: string): string {
   return s
 }
 
+function initialsOf(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean)
+  if (parts.length === 0) return '?'
+  const first = parts[0]?.[0] ?? ''
+  const last = parts.length > 1 ? (parts[parts.length - 1]?.[0] ?? '') : ''
+  return (first + last).toUpperCase()
+}
+
 export default function DigestView() {
   const [digest, setDigest] = useState<DigestRecord | null | 'loading'>('loading')
   const [settings, setSettings] = useState<AppSettings | null>(null)
   const [running, setRunning] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [barsIn, setBarsIn] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -55,6 +65,15 @@ export default function DigestView() {
       cancelled = true
     }
   }, [])
+
+  // Category bars paint once at 0 width, then expand — the CSS width
+  // transition turns that first update into a gentle sweep-in.
+  const hasDigest = digest !== 'loading' && digest !== null
+  useEffect(() => {
+    if (!hasDigest) return
+    const t = window.setTimeout(() => setBarsIn(true), 60)
+    return () => window.clearTimeout(t)
+  }, [hasDigest])
 
   async function run() {
     if (running) return
@@ -90,7 +109,7 @@ export default function DigestView() {
         <TopBar title="Today's Digest" />
         <div className="max-w-screen-sm mx-auto px-4 pb-28 anim-in">
           <div className="animate-pulse mt-4 space-y-3">
-            <div className="h-4 w-44 bg-line rounded" />
+            <div className="h-24 bg-line rounded-2xl" />
             <div className="h-24 bg-line rounded-2xl" />
             <div className="flex gap-3">
               <div className="h-24 flex-1 bg-line rounded-2xl" />
@@ -135,25 +154,80 @@ export default function DigestView() {
       <div className="max-w-screen-sm mx-auto px-4 pb-28 anim-in">
         {errorBanner}
 
-        <div className="flex items-center justify-between gap-3 mt-4">
-          <div className="text-sm text-muted">{formatLongDate(digest.date)}</div>
-          {digest.emailedAt && (
-            <span className="shrink-0 text-xs font-semibold text-emerald-700 bg-emerald-100 rounded-full px-2.5 py-1">
-              Emailed ✓ {formatTime(digest.emailedAt)}
-            </span>
-          )}
+        <div className="card overflow-hidden relative p-5 mt-4">
+          <div className="absolute -right-4 -bottom-6 opacity-[0.06] pointer-events-none" aria-hidden="true">
+            <ZoryxaLogo size={120} variant="current" />
+          </div>
+          <div className="relative flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="text-[11px] font-display font-bold tracking-[0.24em] text-golddeep">
+                MORNING BRIEFING
+              </div>
+              <div className="font-display text-xl font-semibold mt-1">
+                {formatLongDate(digest.date)}
+              </div>
+            </div>
+            {digest.emailedAt && (
+              <span className="shrink-0 text-xs font-semibold text-emerald-700 bg-emerald-100 rounded-full px-2.5 py-1 mt-0.5">
+                Emailed ✓ {formatTime(digest.emailedAt)}
+              </span>
+            )}
+          </div>
         </div>
 
-        <div className="rounded-r-2xl border-l-4 border-gold bg-goldsoft/40 p-4 text-[15px] leading-relaxed font-medium mt-3">
-          {c.narrative}
+        <div className="rounded-2xl border-l-4 border-gold bg-goldsoft/40 p-4 mt-3">
+          <div className="flex gap-2.5">
+            <svg
+              className="shrink-0 mt-1 text-golddeep"
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="currentColor"
+              aria-hidden="true"
+            >
+              <path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8L12 2z" />
+            </svg>
+            <p className="text-[15px] leading-relaxed font-medium">{c.narrative}</p>
+          </div>
         </div>
 
         <div className="flex gap-3 mt-3">
-          <div className="card p-4 flex-1">
+          <div className="card p-4 flex-1 relative">
+            <svg
+              className="absolute top-4 right-4 text-muted opacity-60"
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <rect x="2" y="4" width="20" height="16" rx="2" />
+              <polyline points="22,6 12,13 2,6" />
+            </svg>
             <div className="font-display text-4xl font-semibold">{c.total}</div>
             <div className="text-xs text-muted mt-1">Emails (24h)</div>
           </div>
-          <div className="card p-4 flex-1">
+          <div className="card p-4 flex-1 relative">
+            <svg
+              className="absolute top-4 right-4 text-muted opacity-60"
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <circle cx="12" cy="12" r="10" />
+              <line x1="12" y1="8" x2="12" y2="12" />
+              <line x1="12" y1="16" x2="12.01" y2="16" />
+            </svg>
             <div className="font-display text-4xl font-semibold text-golddeep">{c.actionCount}</div>
             <div className="text-xs text-muted mt-1">Need action</div>
           </div>
@@ -171,7 +245,8 @@ export default function DigestView() {
                   <div
                     className="h-0.5 rounded"
                     style={{
-                      width: `${Math.round((row.count / maxCount) * 100)}%`,
+                      width: barsIn ? `${Math.round((row.count / maxCount) * 100)}%` : '0%',
+                      transition: 'width .6s cubic-bezier(.22,1,.36,1)',
                       backgroundColor: colorFor(row.key),
                     }}
                   />
@@ -185,17 +260,42 @@ export default function DigestView() {
           <section className="mt-4">
             <h2 className="text-xs uppercase font-semibold text-muted mb-2">Top priorities</h2>
             {c.topItems.map((item) => (
-              <Link key={item.id} to={`/email/${item.id}`} className="card p-3.5 mb-2 block">
-                <div className="flex items-center gap-2">
-                  <span className="font-semibold text-sm flex-1 truncate">{item.fromName}</span>
-                  {item.actionRequired && (
-                    <span className="shrink-0 text-[11px] font-semibold text-gold bg-gold/15 rounded-full px-2 py-0.5">
-                      Action
-                    </span>
-                  )}
+              <Link
+                key={item.id}
+                to={`/email/${item.id}`}
+                className="card p-3.5 mb-2 block active:scale-[0.99] transition"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-full bg-navy text-white flex items-center justify-center font-semibold text-xs shrink-0">
+                    {initialsOf(item.fromName)}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold text-sm flex-1 truncate">{item.fromName}</span>
+                      {item.actionRequired && (
+                        <span className="shrink-0 text-[11px] font-semibold text-gold bg-gold/15 rounded-full px-2 py-0.5">
+                          Action
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-sm truncate mt-0.5">{item.subject}</div>
+                    <div className="text-xs text-muted line-clamp-1 mt-0.5">{item.tldr}</div>
+                  </div>
+                  <svg
+                    className="shrink-0 text-muted opacity-60"
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <polyline points="9 18 15 12 9 6" />
+                  </svg>
                 </div>
-                <div className="text-sm truncate mt-0.5">{item.subject}</div>
-                <div className="text-xs text-muted line-clamp-1 mt-0.5">{item.tldr}</div>
               </Link>
             ))}
           </section>

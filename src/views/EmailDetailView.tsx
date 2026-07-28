@@ -5,6 +5,7 @@ import { api } from '../lib/api'
 import TopBar from '../components/TopBar'
 import DraftEditor from '../components/DraftEditor'
 import ConfirmSendModal from '../components/ConfirmSendModal'
+import ZoryxaLogo from '../components/ZoryxaLogo'
 
 const inputClass =
   'w-full rounded-xl border border-line bg-mist px-3.5 py-2.5 text-[15px] focus:outline-none focus:ring-2 focus:ring-gold/60 focus:bg-paper transition disabled:opacity-60'
@@ -312,6 +313,30 @@ export default function EmailDetailView() {
                 </div>
               )}
             </div>
+
+            {/* Ask Zoryxa AI about this email */}
+            <button
+              type="button"
+              onClick={() =>
+                navigate(`/chat?email=${encodeURIComponent(id ?? '')}`, {
+                  state: { subject: detail.subject },
+                })
+              }
+              className="card w-full p-3.5 mt-3 flex items-center gap-3 text-left active:scale-[0.99] transition"
+            >
+              <span className="w-9 h-9 rounded-lg bg-navy text-white flex items-center justify-center shrink-0">
+                <ZoryxaLogo size={18} variant="current" />
+              </span>
+              <span className="flex-1 min-w-0">
+                <span className="block font-semibold text-sm">Ask Zoryxa AI</span>
+                <span className="block text-xs text-muted">
+                  Feasibility, risks, how to answer — anything
+                </span>
+              </span>
+              <svg viewBox="0 0 24 24" className="w-4 h-4 text-muted shrink-0" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" aria-hidden="true">
+                <path d="m9 6 6 6-6 6" />
+              </svg>
+            </button>
 
             {/* Full email */}
             <div className="card p-4 mt-3">

@@ -6,6 +6,7 @@ import { db } from './supabase'
 /** Server-side account record. Secrets stay encrypted until the moment of use. */
 export interface Account {
   id: string
+  userId: string
   kind: 'gmail' | 'imap'
   label: string
   email: string
@@ -32,6 +33,7 @@ function check<T>(r: { data: T | null; error: { message: string } | null }, what
 function rowToAccount(r: any): Account {
   return {
     id: r.id,
+    userId: r.user_id,
     kind: r.kind,
     label: r.label,
     email: r.email,
@@ -69,9 +71,20 @@ export function accountSmtpPass(a: Account): string {
   return decrypt(a.smtpPassEnc)
 }
 
-export async function listAccounts(): Promise<Account[]> {
-  const res = await db().from('accounts').select('*').order('created_at', { ascending: true })
+/** One user's connected mailboxes. */
+export async function listAccounts(userId: string): Promise<Account[]> {
+  const res = await db()
+    .from('accounts')
+    .select('*')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: true })
   return check(res, 'listAccounts').map(rowToAccount)
+}
+
+/** Every account across all users — cron/sync paths only. */
+export async function listAllAccounts(): Promise<Account[]> {
+  const res = await db().from('accounts').select('*').order('created_at', { ascending: true })
+  return check(res, 'listAllAccounts').map(rowToAccount)
 }
 
 export async function getAccount(id: string): Promise<Account | null> {
@@ -80,11 +93,23 @@ export async function getAccount(id: string): Promise<Account | null> {
   return row ? rowToAccount(row) : null
 }
 
-/** Connect (or refresh) a Gmail account, keyed by its address. */
-export async function upsertGmailAccount(email: string, refreshToken: string): Promise<Account> {
+/** An account the signed-in user owns — 404s otherwise. */
+export async function getUserAccount(id: string, userId: string): Promise<Account> {
+  const acc = await getAccount(id)
+  if (!acc || acc.userId !== userId) throw new HttpError(404, 'Mail account not found')
+  return acc
+}
+
+/** Connect (or refresh) a Gmail account for one user, keyed by its address. */
+export async function upsertGmailAccount(
+  userId: string,
+  email: string,
+  refreshToken: string,
+): Promise<Account> {
   const existing = await db()
     .from('accounts')
     .select('*')
+    .eq('user_id', userId)
     .eq('kind', 'gmail')
     .eq('email', email)
     .maybeSingle()
@@ -101,6 +126,7 @@ export async function upsertGmailAccount(email: string, refreshToken: string): P
   const res = await db()
     .from('accounts')
     .insert({
+      user_id: userId,
       kind: 'gmail',
       label: email,
       email,
@@ -113,10 +139,14 @@ export async function upsertGmailAccount(email: string, refreshToken: string): P
 }
 
 /** Store a verified IMAP/SMTP account (verify credentials BEFORE calling). */
-export async function createImapAccount(input: ImapAccountInput): Promise<Account> {
+export async function createImapAccount(
+  userId: string,
+  input: ImapAccountInput,
+): Promise<Account> {
   const res = await db()
     .from('accounts')
     .insert({
+      user_id: userId,
       kind: 'imap',
       label: input.label || input.email,
       email: input.email,

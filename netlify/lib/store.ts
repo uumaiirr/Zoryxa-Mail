@@ -7,6 +7,7 @@ import type {
   StyleProfile,
 } from '../../shared/types'
 import { emailKey } from './accounts'
+import { HttpError } from './http'
 import type { MailMeta } from './mailbox'
 import { DEFAULT_CATEGORIES } from './prompts'
 import { db } from './supabase'
@@ -47,11 +48,16 @@ export function providerIdOf(e: EmailSummary): string {
   return e.id.slice(e.accountId.length + 1)
 }
 
-export async function upsertEmailMetas(accountId: string, metas: MailMeta[]): Promise<number> {
+export async function upsertEmailMetas(
+  accountId: string,
+  userId: string,
+  metas: MailMeta[],
+): Promise<number> {
   if (metas.length === 0) return 0
   const rows = metas.map((m) => ({
     id: emailKey(accountId, m.providerId),
     account_id: accountId,
+    user_id: userId,
     provider_id: m.providerId,
     thread_id: m.threadId,
     from_name: m.fromName,
@@ -80,6 +86,7 @@ export async function knownProviderIds(accountId: string, sinceIso: string): Pro
 }
 
 export async function listEmails(opts: {
+  userId: string
   category?: string
   account?: string
   limit?: number
@@ -88,6 +95,7 @@ export async function listEmails(opts: {
   let q = db()
     .from('emails')
     .select('*')
+    .eq('user_id', opts.userId)
     .order('received_at', { ascending: false })
     .limit(Math.min(opts.limit ?? 50, 100))
   if (opts.category) q = q.eq('category', opts.category)
@@ -100,6 +108,19 @@ export async function getEmail(id: string): Promise<EmailSummary | null> {
   const res = await db().from('emails').select('*').eq('id', id).maybeSingle()
   const row = check(res, 'getEmail')
   return row ? rowToEmail(row) : null
+}
+
+/** An email the signed-in user owns — 404s otherwise. */
+export async function getUserEmail(id: string, userId: string): Promise<EmailSummary> {
+  const res = await db()
+    .from('emails')
+    .select('*')
+    .eq('id', id)
+    .eq('user_id', userId)
+    .maybeSingle()
+  const row = check(res, 'getUserEmail')
+  if (!row) throw new HttpError(404, 'Email not found')
+  return rowToEmail(row)
 }
 
 export async function markRead(id: string): Promise<void> {
@@ -192,39 +213,40 @@ export async function getDraft(id: string): Promise<{ subject: string; body: str
   return { subject: row.draft_subject ?? '', body: row.draft_body }
 }
 
-export async function emailsSince(iso: string): Promise<EmailSummary[]> {
+export async function emailsSince(userId: string, iso: string): Promise<EmailSummary[]> {
   const res = await db()
     .from('emails')
     .select('*')
+    .eq('user_id', userId)
     .gte('received_at', iso)
     .order('received_at', { ascending: false })
     .limit(200)
   return check(res, 'emailsSince').map(rowToEmail)
 }
 
-// ── settings ──────────────────────────────────────────────────────────────────
+// ── settings (per user) ───────────────────────────────────────────────────────
 
 function defaultSettings(): AppSettings {
   return {
     categories: DEFAULT_CATEGORIES,
     digestHour: 7,
     timezone: 'Asia/Dubai',
-    digestTo: process.env.DIGEST_TO ?? '',
+    digestTo: '', // empty = the user's own sign-in email
     llmProvider: process.env.LLM_PROVIDER === 'groq' ? 'groq' : 'gemini',
   }
 }
 
-export async function getSettings(): Promise<AppSettings> {
-  const res = await db().from('app_settings').select('value').eq('key', 'app').maybeSingle()
+export async function getSettings(userId: string): Promise<AppSettings> {
+  const res = await db().from('user_settings').select('value').eq('user_id', userId).maybeSingle()
   const row = check(res, 'getSettings')
   return { ...defaultSettings(), ...((row?.value ?? {}) as Partial<AppSettings>) }
 }
 
-export async function saveSettings(s: AppSettings): Promise<void> {
+export async function saveSettings(userId: string, s: AppSettings): Promise<void> {
   check(
     await db()
-      .from('app_settings')
-      .upsert({ key: 'app', value: s, updated_at: new Date().toISOString() }),
+      .from('user_settings')
+      .upsert({ user_id: userId, value: s, updated_at: new Date().toISOString() }),
     'saveSettings',
   )
 }
@@ -265,14 +287,20 @@ export async function saveStyle(
 
 // ── digests ───────────────────────────────────────────────────────────────────
 
-export async function getDigest(date: string): Promise<DigestRecord | null> {
-  const res = await db().from('digests').select('*').eq('digest_date', date).maybeSingle()
+export async function getDigest(userId: string, date: string): Promise<DigestRecord | null> {
+  const res = await db()
+    .from('digests')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('digest_date', date)
+    .maybeSingle()
   const row = check(res, 'getDigest')
   if (!row) return null
   return { date: row.digest_date, content: row.content as DigestContent, emailedAt: row.emailed_at }
 }
 
 export async function saveDigest(
+  userId: string,
   date: string,
   content: DigestContent,
   emailedAt: string | null,
@@ -280,7 +308,7 @@ export async function saveDigest(
   check(
     await db()
       .from('digests')
-      .upsert({ digest_date: date, content, emailed_at: emailedAt }),
+      .upsert({ user_id: userId, digest_date: date, content, emailed_at: emailedAt }),
     'saveDigest',
   )
 }

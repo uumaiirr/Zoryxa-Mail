@@ -69,12 +69,12 @@ function sanitize(raw: Partial<AppSettings>): AppSettings {
 }
 
 export default handle(async (req) => {
-  requireSession(req)
-  if (req.method === 'GET') return json(await store.getSettings())
+  const userId = requireSession(req)
+  if (req.method === 'GET') return json(await store.getSettings(userId))
   if (req.method === 'PUT') {
     const raw = await readJson<Partial<AppSettings>>(req)
     const clean = sanitize(raw)
-    await store.saveSettings(clean)
+    await store.saveSettings(userId, clean)
     return json(clean)
   }
   return json({ error: 'Method not allowed' }, 405)

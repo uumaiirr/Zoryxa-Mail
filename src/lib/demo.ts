@@ -339,6 +339,35 @@ const digest: DigestRecord = {
 const authStatus: AuthStatus = {
   authed: true,
   accountCount: accounts.length,
+  user: { email: 'walid@dubaiconsultancy.ae', name: 'Walid', picture: '' },
+}
+
+const CHAT_REPLIES: [RegExp, string][] = [
+  [
+    /feasib|worth|viable|should i/i,
+    'Feasible — and favorable. The committee already approved the framework, so the remaining risk is contractual, not political. Two things to check before signing: (1) whether the 96 sqm pavilion fee is inside this year’s events budget, and (2) an exit clause if CANEX shifts dates. If both clear, sign before Thursday — the Gold position is the scarce asset here.',
+  ],
+  [
+    /risk|danger|careful/i,
+    'Main risks: the payment terms are not stated in the email — get them in writing before signing; and the speaking slot is promised but not scheduled, so ask for the panel date now. Neither is a dealbreaker.',
+  ],
+  [
+    /reply|answer|respond|terms/i,
+    'Reply warm but brief: thank Ibrahim, confirm intent to sign by Thursday, and ask for two clarifications in the same email — payment schedule and the panel date. Asking now, before signing, is your only leverage moment.',
+  ],
+  [
+    /attention|today|priorit/i,
+    'Three things genuinely need you today: 1) Afreximbank — sign the CANEX package by Thursday (highest value). 2) JAFZA license renewal — two documents by 5 August; delegate to Sara today. 3) The Ministry roundtable RSVP for 1 August. Everything else can wait.',
+  ],
+  [
+    /deadline|week/i,
+    'This week: Thursday 30 July — CANEX exhibitor package. Friday 31 July — dinner at Khalid’s (personal). Then 1 August — Ministry roundtable, 3 August — Horizon invoice AED 38,500, 5 August — JAFZA documents.',
+  ],
+]
+
+function demoChatReply(question: string): string {
+  for (const [re, answer] of CHAT_REPLIES) if (re.test(question)) return answer
+  return 'Looking at your recent mail: the Afreximbank partnership is the highest-value open item (signature due Thursday), JAFZA needs two documents by 5 August, and the Ministry roundtable needs an RSVP. Ask me about any of them — feasibility, risks, or how to reply.'
 }
 
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms))
@@ -356,8 +385,17 @@ export function installDemo(): void {
 
     await delay(200)
 
-    if (path === '/api/login') return json({ ok: true })
+    if (path === '/api/logout') return json({ ok: true })
     if (path === '/api/auth/status') return json(authStatus)
+
+    if (path === '/api/chat') {
+      await delay(1100)
+      const b = init?.body
+        ? (JSON.parse(String(init.body)) as { messages?: { role: string; content: string }[] })
+        : null
+      const last = b?.messages?.filter((m) => m.role === 'user').at(-1)?.content ?? ''
+      return json({ reply: demoChatReply(last) })
+    }
 
     if (path === '/api/accounts') {
       if (init?.method === 'POST') {

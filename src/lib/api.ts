@@ -1,6 +1,7 @@
 import type {
   AppSettings,
   AuthStatus,
+  ChatMessage,
   DigestRecord,
   DraftResult,
   EmailDetail,
@@ -54,11 +55,19 @@ const qs = (params: Record<string, string | number | undefined>) => {
   return s ? `?${s}` : ''
 }
 
-export const api = {
-  login: (passcode: string) =>
-    j<{ ok: true }>('/api/login', { method: 'POST', body: JSON.stringify({ passcode }) }),
+/** "Continue with Google" — full-page navigation, not a fetch. */
+export const LOGIN_URL = '/api/auth/login'
 
+export const api = {
   authStatus: () => j<AuthStatus>('/api/auth/status'),
+
+  logout: () => j<{ ok: true }>('/api/logout', { method: 'POST', body: '{}' }),
+
+  chat: (messages: ChatMessage[], emailId?: string) =>
+    j<{ reply: string }>('/api/chat', {
+      method: 'POST',
+      body: JSON.stringify({ messages, emailId }),
+    }),
 
   accounts: () => j<MailAccount[]>('/api/accounts'),
 

@@ -6,10 +6,9 @@ import { requireSession } from '../lib/session'
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 export default handle(async (req, context) => {
-  requireSession(req)
+  const userId = requireSession(req)
   const id = decodeURIComponent(context.params.id)
-  const acc = await accounts.getAccount(id)
-  if (!acc) throw new HttpError(404, 'Mail account not found')
+  await accounts.getUserAccount(id, userId) // ownership check (404s otherwise)
 
   if (req.method === 'DELETE') {
     await accounts.deleteAccount(id)

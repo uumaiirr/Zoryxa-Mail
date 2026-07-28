@@ -1,8 +1,10 @@
 function Row(props: { label: string; value: string }) {
   return (
-    <div>
-      <div className="text-xs text-muted uppercase tracking-wide font-semibold">{props.label}</div>
-      <div className="font-medium break-words text-[15px] mt-0.5">{props.value}</div>
+    <div className="flex items-baseline gap-4 py-2.5">
+      <div className="w-16 shrink-0 text-xs text-muted uppercase tracking-wide font-semibold">
+        {props.label}
+      </div>
+      <div className="flex-1 min-w-0 font-medium break-words text-[15px]">{props.value}</div>
     </div>
   )
 }
@@ -35,9 +37,28 @@ export default function ConfirmSendModal(props: {
       >
         <div className="sm:hidden mx-auto mb-3 h-1.5 w-10 rounded-full bg-line" aria-hidden="true" />
 
-        <h2 className="font-bold text-lg">Review before sending</h2>
+        <div className="flex items-center gap-3">
+          <span
+            className="w-10 h-10 rounded-xl bg-goldsoft text-navydeep flex items-center justify-center shrink-0"
+            aria-hidden="true"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M22 2 11 13" />
+              <path d="M22 2 15 22l-4-9-9-4 20-7z" />
+            </svg>
+          </span>
+          <h2 className="font-display font-bold text-lg">Review before sending</h2>
+        </div>
 
-        <div className="mt-4 space-y-3">
+        <div className="mt-3 divide-y divide-line border-y border-line">
           <Row label="To" value={props.to} />
           {props.cc ? <Row label="Cc" value={props.cc} /> : null}
           <Row label="Subject" value={props.subject} />

@@ -27,13 +27,50 @@ function slug(s: string): string {
     .replace(/^-+|-+$/g, '')
 }
 
-function Section({ title, children }: { title: string; children: ReactNode }) {
+function Section({
+  title,
+  icon,
+  children,
+}: {
+  title: string
+  icon?: ReactNode
+  children: ReactNode
+}) {
   return (
     <section>
-      <h2 className="text-xs font-semibold uppercase tracking-wide text-muted mb-2 mt-5">{title}</h2>
+      <h2 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted mb-2 mt-5">
+        {icon}
+        <span>{title}</span>
+      </h2>
       <div className="card p-4">{children}</div>
     </section>
   )
+}
+
+const sectionIcon = {
+  envelope: (
+    <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} strokeLinejoin="round" aria-hidden="true">
+      <rect x="3" y="5" width="18" height="14" rx="2" />
+      <path d="m3 7 9 6 9-6" />
+    </svg>
+  ),
+  sun: (
+    <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="4" />
+      <path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9 17 7M7 17l-2.1 2.1" />
+    </svg>
+  ),
+  sparkle: (
+    <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 shrink-0" fill="currentColor" aria-hidden="true">
+      <path d="M12 2l2.1 6.1L20.5 10l-6.4 1.9L12 18l-2.1-6.1L3.5 10l6.4-1.9L12 2z" />
+    </svg>
+  ),
+  tag: (
+    <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8Z" />
+      <path d="M7.5 7.5h.01" />
+    </svg>
+  ),
 }
 
 function messageOf(e: unknown): string {
@@ -147,7 +184,7 @@ function AccountsSection() {
   }
 
   return (
-    <Section title="Mail accounts">
+    <Section title="Mail accounts" icon={sectionIcon.envelope}>
       {notice && (
         <div
           className={
@@ -175,7 +212,7 @@ function AccountsSection() {
             <div className="flex items-start gap-3">
               <span className="w-9 h-9 rounded-lg bg-goldsoft flex items-center justify-center text-navydeep shrink-0">
                 {acc.kind === 'gmail' ? (
-                  <svg viewBox="0 0 24 24" className="w-4.5 h-4.5 w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2} strokeLinejoin="round" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2} strokeLinejoin="round" aria-hidden="true">
                     <rect x="3" y="5" width="18" height="14" rx="2" />
                     <path d="m3 7 9 6 9-6" />
                   </svg>
@@ -203,7 +240,7 @@ function AccountsSection() {
               </button>
             </div>
             <label className="block text-xs font-medium text-muted mb-1.5 mt-3">
-              Send as (the From address on outgoing mail)
+              Send from this address
             </label>
             <input
               type="email"
@@ -223,9 +260,16 @@ function AccountsSection() {
               </button>
               {rowMsg[acc.id] && <span className="text-xs text-muted">{rowMsg[acc.id]}</span>}
             </div>
+            <p className="text-xs text-muted">
+              Teach Zoryxa how you write — run after connecting, and every month or two.
+            </p>
           </div>
         ))
       )}
+
+      <p className="text-xs text-muted mt-3">
+        Zoryxa never sends, deletes, or moves anything without your tap.
+      </p>
 
       <div className="flex gap-3 mt-4">
         <button
@@ -252,14 +296,14 @@ function AccountsSection() {
             <label className="block text-xs font-medium text-muted mb-1.5">Email address</label>
             <input type="email" className={inputClass} value={form.email} onChange={(e) => setF({ email: e.target.value })} />
           </div>
-          <p className="text-xs font-semibold uppercase tracking-wide text-muted pt-1">Incoming (IMAP)</p>
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted pt-1">Receiving (ask IT if unsure)</p>
           <div className="flex gap-2">
             <input type="text" className={`${inputClass} flex-1`} placeholder="mail.yourdomain.com" value={form.imapHost} onChange={(e) => setF({ imapHost: e.target.value })} aria-label="IMAP server" />
             <input type="number" className={`${inputClass} w-24`} value={form.imapPort} onChange={(e) => setF({ imapPort: e.target.value })} aria-label="IMAP port" />
           </div>
           <input type="text" className={inputClass} placeholder="Username (usually the full email address)" value={form.imapUser} onChange={(e) => setF({ imapUser: e.target.value })} aria-label="IMAP username" />
           <input type="password" className={inputClass} placeholder="Password" value={form.imapPass} onChange={(e) => setF({ imapPass: e.target.value })} aria-label="IMAP password" />
-          <p className="text-xs font-semibold uppercase tracking-wide text-muted pt-1">Outgoing (SMTP)</p>
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted pt-1">Sending</p>
           <div className="flex gap-2">
             <input type="text" className={`${inputClass} flex-1`} placeholder="Same server, or smtp.…" value={form.smtpHost} onChange={(e) => setF({ smtpHost: e.target.value })} aria-label="SMTP server" />
             <input type="number" className={`${inputClass} w-24`} value={form.smtpPort} onChange={(e) => setF({ smtpPort: e.target.value })} aria-label="SMTP port" />
@@ -279,7 +323,18 @@ function AccountsSection() {
             <input type="email" className={inputClass} placeholder="Leave blank to send as the email above" value={form.sendAs} onChange={(e) => setF({ sendAs: e.target.value })} />
           </div>
           <button type="button" className="btn-primary w-full" onClick={() => void addImap()} disabled={busy}>
-            {busy ? 'Checking the mail server…' : 'Verify & add'}
+            {busy ? (
+              <span className="inline-flex items-center justify-center gap-2">
+                <span className="inline-flex items-center gap-1" aria-hidden="true">
+                  <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse" />
+                  <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse" style={{ animationDelay: '150ms' }} />
+                  <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse" style={{ animationDelay: '300ms' }} />
+                </span>
+                Checking the mail server…
+              </span>
+            ) : (
+              'Verify & add'
+            )}
           </button>
         </div>
       )}
@@ -421,6 +476,38 @@ export default function SettingsView(props: { auth: AuthStatus }) {
           </div>
         )}
 
+        {props.auth.user && (
+          <div className="card p-4 mt-4 flex items-center gap-3">
+            {props.auth.user.picture ? (
+              <img
+                src={props.auth.user.picture}
+                alt=""
+                referrerPolicy="no-referrer"
+                className="w-11 h-11 rounded-full shrink-0"
+              />
+            ) : (
+              <span className="w-11 h-11 rounded-full bg-navy text-white flex items-center justify-center font-semibold shrink-0">
+                {(props.auth.user.name || props.auth.user.email).slice(0, 1).toUpperCase()}
+              </span>
+            )}
+            <div className="min-w-0 flex-1">
+              <div className="font-semibold truncate">
+                {props.auth.user.name || props.auth.user.email}
+              </div>
+              <div className="text-xs text-muted truncate">{props.auth.user.email}</div>
+            </div>
+            <button
+              type="button"
+              className="text-sm text-muted underline py-2 shrink-0"
+              onClick={() => {
+                void api.logout().finally(() => window.location.assign('/login'))
+              }}
+            >
+              Sign out
+            </button>
+          </div>
+        )}
+
         <Link to="/guide" className="card p-4 mt-4 flex items-center gap-3 active:scale-[0.99] transition">
           <span className="w-10 h-10 rounded-xl bg-goldsoft flex items-center justify-center text-navydeep shrink-0">
             <svg viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -449,7 +536,7 @@ export default function SettingsView(props: { auth: AuthStatus }) {
           </div>
         ) : (
           <>
-            <Section title="Morning digest">
+            <Section title="Morning digest" icon={sectionIcon.sun}>
               <label className="block text-xs font-medium text-muted mb-1.5" htmlFor="digest-hour">
                 Arrives at
               </label>
@@ -477,6 +564,9 @@ export default function SettingsView(props: { auth: AuthStatus }) {
                 value={settings.timezone}
                 onChange={(e) => patch({ timezone: e.target.value })}
               />
+              <p className="text-xs text-muted mt-1.5">
+                Like Asia/Dubai — this sets when your digest arrives.
+              </p>
 
               <label className="block text-xs font-medium text-muted mb-1.5 mt-3" htmlFor="digest-to">
                 Send digest to
@@ -494,7 +584,7 @@ export default function SettingsView(props: { auth: AuthStatus }) {
               </p>
             </Section>
 
-            <Section title="AI assistant">
+            <Section title="AI assistant" icon={sectionIcon.sparkle}>
               <label className="block text-xs font-medium text-muted mb-1.5" htmlFor="provider">
                 Powered by
               </label>
@@ -513,7 +603,7 @@ export default function SettingsView(props: { auth: AuthStatus }) {
               </p>
             </Section>
 
-            <Section title="Categories">
+            <Section title="Categories" icon={sectionIcon.tag}>
               {settings.categories.map((cat, i) => (
                 <div key={cat.key}>
                   {i > 0 && <div className="border-t border-line my-3" />}

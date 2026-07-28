@@ -11,17 +11,15 @@ import { getStyleOrBuild } from '../lib/style-core'
 
 export default handle(async (req) => {
   if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
-  requireSession(req)
+  const userId = requireSession(req)
 
   const { id, instruction } = await readJson<{ id: string; instruction?: string }>(req)
   if (typeof id !== 'string' || id.trim() === '') {
     throw new HttpError(400, 'Missing email id')
   }
 
-  const original = await store.getEmail(id)
-  if (!original) throw new HttpError(404, 'Email not found')
-  const acc = await accounts.getAccount(original.accountId)
-  if (!acc) throw new HttpError(404, 'Mail account not found')
+  const original = await store.getUserEmail(id, userId)
+  const acc = await accounts.getUserAccount(original.accountId, userId)
 
   let body = original.snippet
   try {

@@ -11,18 +11,18 @@ import { todayIn } from '../lib/sync-core'
 
 export default handle(async (req) => {
   if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
-  requireSession(req)
+  const userId = requireSession(req)
 
   const { instruction, accountId } = await readJson<{ instruction: string; accountId?: string }>(req)
   if (typeof instruction !== 'string' || instruction.trim() === '') {
     throw new HttpError(400, 'Tell me what the email should say')
   }
 
-  const settings = await store.getSettings()
+  const settings = await store.getSettings(userId)
   const today = todayIn(settings.timezone)
 
   // Voice: the chosen account's style, else the first account's, else none.
-  const all = await accounts.listAccounts()
+  const all = await accounts.listAccounts(userId)
   const acc = (typeof accountId === 'string' && all.find((a) => a.id === accountId)) || all[0]
   const { profile, examples } = acc
     ? await getStyleOrBuild(acc.id)

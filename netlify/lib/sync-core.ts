@@ -42,7 +42,7 @@ export function todayIn(timezone: string): string {
 export async function runSync(
   opts: { force?: boolean; debounceMs?: number; accountId?: string } = {},
 ): Promise<SyncResult> {
-  const all = await accounts.listAccounts()
+  const all = await accounts.listAllAccounts()
   const targets = opts.accountId ? all.filter((a) => a.id === opts.accountId) : all
   const debounce = opts.debounceMs ?? DEBOUNCE_MS
 
@@ -66,7 +66,7 @@ export async function runSync(
       })
       // Persist in chunks so progress survives even if the invocation dies.
       for (let i = 0; i < metas.length; i += 20) {
-        newEmails += await store.upsertEmailMetas(acc.id, metas.slice(i, i + 20))
+        newEmails += await store.upsertEmailMetas(acc.id, acc.userId, metas.slice(i, i + 20))
       }
       await accounts.touchAccountSync(acc.id)
     } catch (e) {
@@ -76,13 +76,20 @@ export async function runSync(
 
   const accById = new Map(all.map((a) => [a.id, a]))
   let summarized = 0
-  const settings = await store.getSettings()
-  const validKeys = new Set(settings.categories.map((c) => c.key))
-  const today = todayIn(settings.timezone)
 
   for (let b = 0; b < MAX_BATCHES_PER_RUN; b++) {
-    const pendingRows = await store.listUnsummarized(BATCH_SIZE)
-    if (pendingRows.length === 0) break
+    // Categories/timezone are per user, so each batch serves ONE user: take the
+    // oldest pending user's emails first; the next loop pass picks up the next.
+    const candidates = await store.listUnsummarized(BATCH_SIZE * 3)
+    if (candidates.length === 0) break
+    const batchUserId = accById.get(candidates[0].accountId)?.userId
+    const pendingRows = candidates
+      .filter((r) => accById.get(r.accountId)?.userId === batchUserId)
+      .slice(0, BATCH_SIZE)
+    if (pendingRows.length === 0 || !batchUserId) break
+    const settings = await store.getSettings(batchUserId)
+    const validKeys = new Set(settings.categories.map((c) => c.key))
+    const today = todayIn(settings.timezone)
 
     const inputs: SummarizeInput[] = []
     for (const row of pendingRows) {

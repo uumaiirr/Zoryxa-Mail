@@ -8,11 +8,10 @@ import * as store from '../lib/store'
 
 export default handle(async (req, context) => {
   if (req.method !== 'GET') return json({ error: 'Method not allowed' }, 405)
-  requireSession(req)
+  const userId = requireSession(req)
 
   const id = decodeURIComponent(context.params.id)
-  const summary = await store.getEmail(id)
-  if (!summary) throw new HttpError(404, 'Email not found')
+  const summary = await store.getUserEmail(id, userId)
   const acc = await accounts.getAccount(summary.accountId)
   if (!acc) throw new HttpError(404, 'Mail account not found')
 

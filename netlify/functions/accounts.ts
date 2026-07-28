@@ -22,10 +22,10 @@ function required(v: unknown, label: string): string {
 }
 
 export default handle(async (req) => {
-  requireSession(req)
+  const userId = requireSession(req)
 
   if (req.method === 'GET') {
-    return json((await accounts.listAccounts()).map(accounts.toPublic))
+    return json((await accounts.listAccounts(userId)).map(accounts.toPublic))
   }
 
   if (req.method === 'POST') {
@@ -51,7 +51,7 @@ export default handle(async (req) => {
     }
     // Prove the credentials work BEFORE storing anything.
     await verifyImapAccount(input)
-    const acc = await accounts.createImapAccount(input)
+    const acc = await accounts.createImapAccount(userId, input)
     return json(accounts.toPublic(acc), 201)
   }
 

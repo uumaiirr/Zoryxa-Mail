@@ -5,7 +5,7 @@ import * as store from '../lib/store'
 
 export default handle(async (req) => {
   if (req.method !== 'GET') return json({ error: 'Method not allowed' }, 405)
-  requireSession(req)
+  const userId = requireSession(req)
 
   const params = new URL(req.url).searchParams
   const category = params.get('category')
@@ -16,6 +16,7 @@ export default handle(async (req) => {
   const limit = Number.isFinite(rawLimit) ? Math.min(Math.max(rawLimit, 1), 100) : 50
 
   const emails = await store.listEmails({
+    userId,
     category: category || undefined,
     account: account || undefined,
     limit,

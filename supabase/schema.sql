@@ -1,8 +1,17 @@
--- CEO Mail Agent — Supabase schema (v2: multiple mail accounts)
+-- ZORYXA MAIL — Supabase schema (v3: personal workspaces, multi-account mail)
 -- Run once on a fresh project: Dashboard → SQL Editor → paste everything → Run.
+
+create table if not exists users (
+  id uuid primary key default gen_random_uuid(),
+  email text unique not null,
+  name text not null default '',
+  picture text not null default '',
+  created_at timestamptz not null default now()
+);
 
 create table if not exists accounts (
   id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references users(id) on delete cascade,
   kind text not null check (kind in ('gmail','imap')),
   label text not null default '',
   email text not null default '',
@@ -22,10 +31,12 @@ create table if not exists accounts (
   last_sync_at timestamptz,
   created_at timestamptz not null default now()
 );
+create index if not exists accounts_user_idx on accounts (user_id);
 
 create table if not exists emails (
   id text primary key, -- `${account_id}~${provider_id}`
   account_id uuid not null references accounts(id) on delete cascade,
+  user_id uuid not null references users(id) on delete cascade,
   provider_id text not null, -- gmail message id, or imap uid
   thread_id text not null default '',
   from_name text not null default '',
@@ -48,13 +59,13 @@ create table if not exists emails (
   draft_generated_at timestamptz,
   created_at timestamptz not null default now()
 );
+create index if not exists emails_user_received_idx on emails (user_id, received_at desc);
 create index if not exists emails_account_received_idx on emails (account_id, received_at desc);
-create index if not exists emails_received_at_idx on emails (received_at desc);
 create index if not exists emails_category_idx on emails (category);
 create index if not exists emails_pending_idx on emails (summarized) where summarized = false;
 
-create table if not exists app_settings (
-  key text primary key,
+create table if not exists user_settings (
+  user_id uuid primary key references users(id) on delete cascade,
   value jsonb not null,
   updated_at timestamptz not null default now()
 );
@@ -67,17 +78,20 @@ create table if not exists style_profile (
 );
 
 create table if not exists digests (
-  digest_date date primary key,
+  user_id uuid not null references users(id) on delete cascade,
+  digest_date date not null,
   content jsonb not null,
   emailed_at timestamptz,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  primary key (user_id, digest_date)
 );
 
 -- The browser never talks to Supabase: every query goes through Netlify
 -- Functions using the service-role key (which bypasses RLS). Enabling RLS with
 -- NO policies blocks the public anon key completely.
+alter table users enable row level security;
 alter table accounts enable row level security;
 alter table emails enable row level security;
-alter table app_settings enable row level security;
+alter table user_settings enable row level security;
 alter table style_profile enable row level security;
 alter table digests enable row level security;

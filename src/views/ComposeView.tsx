@@ -5,6 +5,21 @@ import { api, ApiError } from '../lib/api'
 import TopBar from '../components/TopBar'
 import DraftEditor from '../components/DraftEditor'
 import ConfirmSendModal from '../components/ConfirmSendModal'
+import ZoryxaLogo from '../components/ZoryxaLogo'
+
+function DraftingDots() {
+  return (
+    <span className="inline-flex items-center gap-1" aria-hidden="true">
+      {[0, 1, 2].map((i) => (
+        <span
+          key={i}
+          className="w-1.5 h-1.5 rounded-full bg-white/80 animate-pulse"
+          style={{ animationDelay: `${i * 160}ms` }}
+        />
+      ))}
+    </span>
+  )
+}
 
 interface Draft {
   to: string
@@ -118,7 +133,7 @@ export default function ComposeView() {
         )}
 
         {sent ? (
-          <div className="card p-6 mt-4 text-center">
+          <div className="card p-6 mt-4 text-center anim-in">
             <span className="mx-auto w-12 h-12 rounded-full bg-emerald-100 flex items-center justify-center">
               <svg
                 viewBox="0 0 24 24"
@@ -138,7 +153,10 @@ export default function ComposeView() {
           </div>
         ) : draft === null ? (
           <div className="card p-5 mt-4">
-            <h1 className="font-display text-[22px] font-semibold">What should I write?</h1>
+            <div className="w-11 h-11 rounded-xl bg-navy text-white flex items-center justify-center">
+              <ZoryxaLogo size={22} variant="current" />
+            </div>
+            <h1 className="font-display text-[22px] font-semibold mt-3">What should I write?</h1>
             <p className="text-sm text-muted mt-1">
               Describe it in one line — I will draft it in your voice.
             </p>
@@ -154,7 +172,7 @@ export default function ComposeView() {
                   key={ex}
                   type="button"
                   onClick={() => setInstruction(ex)}
-                  className="rounded-full bg-mist border border-line px-3 py-2 text-xs text-muted active:bg-goldsoft transition"
+                  className="rounded-full bg-mist border border-line px-3 py-2 text-xs text-muted active:bg-goldsoft active:text-navydeep active:border-gold/30 active:scale-[0.97] transition"
                 >
                   {ex}
                 </button>
@@ -166,7 +184,14 @@ export default function ComposeView() {
               onClick={generate}
               disabled={!instruction.trim() || generating}
             >
-              {generating ? 'Drafting…' : 'Generate draft'}
+              {generating ? (
+                <span className="inline-flex items-center gap-2">
+                  Drafting
+                  <DraftingDots />
+                </span>
+              ) : (
+                'Generate draft'
+              )}
             </button>
           </div>
         ) : (

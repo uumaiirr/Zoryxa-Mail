@@ -11,7 +11,7 @@ function redirect(url: string): Response {
 // value is verified by the callback (CSRF protection).
 export default handle(async (req) => {
   if (!hasValidSession(req)) return redirect('/login')
-  return redirect(gmail.oauthStartUrl(makeOauthState()))
+  return redirect(gmail.oauthStartUrl(makeOauthState('connect')))
 })
 
 export const config: Config = { path: '/api/auth/google/start' }

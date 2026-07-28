@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 import type { AppSettings, EmailSummary, MailAccount } from '../../shared/types'
 import { api, ApiError } from '../lib/api'
 import CategoryChips from '../components/CategoryChips'
@@ -14,19 +15,38 @@ function messageOf(e: unknown): string {
   return 'Something went wrong. Please try again.'
 }
 
+function greetingFor(hour: number): string {
+  if (hour < 12) return 'Good morning'
+  if (hour < 18) return 'Good afternoon'
+  return 'Good evening'
+}
+
+// 'Today' / 'Yesterday' / 'Saturday 26 July' for the day-group labels.
+function dayLabel(iso: string): string {
+  const d = new Date(iso)
+  const startOf = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime()
+  const days = Math.round((startOf(new Date()) - startOf(d)) / 86_400_000)
+  if (days <= 0) return 'Today'
+  if (days === 1) return 'Yesterday'
+  return d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })
+}
+
 function SkeletonList() {
   return (
     <div className="space-y-3">
       {Array.from({ length: 5 }).map((_, i) => (
         <div key={i} className="card p-4">
-          <div className="animate-pulse space-y-2.5">
-            <div className="flex items-center justify-between">
-              <div className="h-4 w-1/3 bg-line rounded" />
-              <div className="h-3 w-12 bg-line rounded" />
+          <div className="animate-pulse flex items-start gap-3">
+            <div className="w-10 h-10 rounded-full bg-line shrink-0" />
+            <div className="min-w-0 flex-1 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <div className="h-4 w-1/3 bg-line rounded" />
+                <div className="h-3 w-12 bg-line rounded" />
+              </div>
+              <div className="h-4 w-3/4 bg-line rounded" />
+              <div className="h-3 w-full bg-line rounded" />
+              <div className="h-3 w-2/3 bg-line rounded" />
             </div>
-            <div className="h-4 w-3/4 bg-line rounded" />
-            <div className="h-3 w-full bg-line rounded" />
-            <div className="h-3 w-2/3 bg-line rounded" />
           </div>
         </div>
       ))}
@@ -196,6 +216,40 @@ export default function InboxView() {
   for (const e of allEmails) {
     counts[e.category] = (counts[e.category] ?? 0) + 1
   }
+  const attentionCount = allEmails.reduce((n, e) => n + (e.actionRequired ? 1 : 0), 0)
+
+  // Flat list of day labels + cards; labels keyed by their string, cards by id.
+  let emailRows: ReactNode[] | null = null
+  if (emails !== null) {
+    emailRows = []
+    let prevLabel: string | null = null
+    for (const email of emails) {
+      const label = dayLabel(email.receivedAt)
+      if (label !== prevLabel) {
+        prevLabel = label
+        emailRows.push(
+          <p
+            key={label}
+            className="text-xs font-semibold uppercase tracking-wide text-muted px-1 pt-2"
+          >
+            {label}
+          </p>,
+        )
+      }
+      emailRows.push(
+        <EmailCard
+          key={email.id}
+          email={email}
+          category={settings?.categories.find((c) => c.key === email.category)}
+          accountLabel={
+            accountsList.length > 1 && activeAccount === null
+              ? accountsList.find((a) => a.id === email.accountId)?.label
+              : undefined
+          }
+        />,
+      )
+    }
+  }
 
   const today = new Date().toLocaleDateString('en-GB', {
     weekday: 'long',
@@ -238,6 +292,18 @@ export default function InboxView() {
       />
 
       <div className="max-w-screen-sm mx-auto pb-28 anim-in">
+        {settings !== null && (
+          <div className="px-4 pt-4">
+            <p className="font-display text-[15px] text-muted">
+              {greetingFor(new Date().getHours())}
+            </p>
+            {attentionCount > 0 && (
+              <p className="font-display text-[15px] font-bold text-ink mt-0.5">
+                {attentionCount} need{attentionCount === 1 ? 's' : ''} your attention
+              </p>
+            )}
+          </div>
+        )}
         {accountsList.length > 1 && (
           <div
             className="px-4 pt-3 flex gap-2 overflow-x-auto"
@@ -293,20 +359,7 @@ export default function InboxView() {
               <EmptyState title="No mail here yet" hint="New email is summarized automatically" />
             )
           ) : (
-            <div className="space-y-3">
-              {emails.map((email) => (
-                <EmailCard
-                  key={email.id}
-                  email={email}
-                  category={settings?.categories.find((c) => c.key === email.category)}
-                  accountLabel={
-                    accountsList.length > 1 && activeAccount === null
-                      ? accountsList.find((a) => a.id === email.accountId)?.label
-                      : undefined
-                  }
-                />
-              ))}
-            </div>
+            <div className="space-y-3">{emailRows}</div>
           )}
         </div>
       </div>

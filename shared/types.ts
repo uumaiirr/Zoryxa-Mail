@@ -103,7 +103,13 @@ export interface AppSettings {
 
 export interface AuthStatus {
   authed: boolean
-  accountCount: number // connected mail accounts
+  accountCount: number // connected mail accounts (for the signed-in user)
+  user: { email: string; name: string; picture: string } | null
+}
+
+export interface ChatMessage {
+  role: 'user' | 'assistant'
+  content: string
 }
 
 export interface SyncResult {

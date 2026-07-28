@@ -1,13 +1,14 @@
 import type { Config } from '@netlify/functions'
 import type { DigestContent, DigestItem } from '../../shared/types'
 import * as accounts from '../lib/accounts'
-import { handle, HttpError, json } from '../lib/http'
-import * as mailbox from '../lib/mailbox'
+import { handle, json } from '../lib/http'
 import { llmJson } from '../lib/llm'
+import * as mailbox from '../lib/mailbox'
 import { digestNarrativePrompt } from '../lib/prompts'
-import { hasValidSession, requireCronOrSession } from '../lib/session'
+import { requireCronOrSession } from '../lib/session'
 import * as store from '../lib/store'
 import { runSync, todayIn } from '../lib/sync-core'
+import { getUser, listUsers, type User } from '../lib/users'
 
 /** Emails are untrusted input — escape everything that goes into the HTML mail. */
 function esc(s: string): string {
@@ -109,16 +110,8 @@ function buildText(c: DigestContent, humanDate: string, siteUrl: string): string
   return lines.join('\n')
 }
 
-export default handle(async (req) => {
-  if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
-  requireCronOrSession(req)
-
-  const body = (await req.json().catch(() => ({}))) as { force?: boolean }
-  // A signed-in user pressing the button expects it to run NOW; only the pure
-  // cron path (x-cron-secret) is bound to the configured hour.
-  const forced = body.force === true || hasValidSession(req)
-
-  const settings = await store.getSettings()
+async function runDigestFor(user: User, forced: boolean): Promise<{ sent: boolean; reason?: string }> {
+  const settings = await store.getSettings(user.id)
   const tz = settings.timezone
   const today = todayIn(tz)
   const hourNow =
@@ -128,27 +121,15 @@ export default handle(async (req) => {
       ),
     ) % 24
 
-  // Catch-up window: GitHub cron is best-effort and can skip a tick. Any tick
-  // within 3 hours after digest hour still sends — the emailedAt guard below
-  // makes sure exactly one digest goes out per day.
+  // Catch-up window: the cron is best-effort; any tick within 3 hours after
+  // digest hour still sends, and the emailedAt guard keeps it to once per day.
   const hoursPast = hourNow - settings.digestHour
-  if (!forced && (hoursPast < 0 || hoursPast > 3)) {
-    return json({ ok: true, sent: false, reason: 'Not digest hour' })
-  }
+  if (!forced && (hoursPast < 0 || hoursPast > 3)) return { sent: false, reason: 'Not digest hour' }
 
-  const existing = await store.getDigest(today)
-  if (existing?.emailedAt && !forced) {
-    return json({ ok: true, sent: false, reason: 'Already sent today' })
-  }
+  const existing = await store.getDigest(user.id, today)
+  if (existing?.emailedAt && !forced) return { sent: false, reason: 'Already sent today' }
 
-  try {
-    await runSync({})
-  } catch (e) {
-    // The digest must still build from what is already stored.
-    console.error('sync during digest failed', e)
-  }
-
-  const emails = await store.emailsSince(new Date(Date.now() - 86400000).toISOString())
+  const emails = await store.emailsSince(user.id, new Date(Date.now() - 86400000).toISOString())
   const total = emails.length
   const actionCount = emails.filter((e) => e.actionRequired).length
 
@@ -198,7 +179,7 @@ export default handle(async (req) => {
           .slice(0, 5)
           .map((t) => ({ fromName: t.fromName, subject: t.subject, tldr: t.tldr })),
       }),
-      { maxTokens: 300 },
+      { maxTokens: 300, provider: settings.llmProvider },
     )
     if (typeof out.narrative === 'string' && out.narrative.trim().length > 0) {
       narrative = out.narrative.trim()
@@ -217,12 +198,14 @@ export default handle(async (req) => {
     narrative,
   }
 
-  await store.saveDigest(today, content, null)
+  await store.saveDigest(user.id, today, content, null)
 
-  if (!settings.digestTo) {
-    return json({ ok: true, sent: false, reason: 'No digest recipient configured' })
-  }
+  const userAccounts = await accounts.listAccounts(user.id)
+  const sender =
+    userAccounts.find((a) => a.kind === 'gmail' && a.refreshTokenEnc) ?? userAccounts[0]
+  if (!sender) return { sent: false, reason: 'No mail account connected yet' }
 
+  const digestTo = settings.digestTo || user.email
   const humanDate = new Intl.DateTimeFormat('en-GB', {
     timeZone: tz,
     weekday: 'long',
@@ -232,35 +215,61 @@ export default handle(async (req) => {
   }).format(new Date())
   const siteUrl = process.env.SITE_URL ?? ''
 
-  // Send from the first connected Gmail account, else the first account.
-  const allAccounts = await accounts.listAccounts()
-  const sender =
-    allAccounts.find((a) => a.kind === 'gmail' && a.refreshTokenEnc) ?? allAccounts[0]
-  if (!sender) {
-    return json({ ok: true, sent: false, reason: 'No mail account connected yet' })
-  }
-
   // Mark as emailed BEFORE sending: if the platform kills this invocation
-  // mid-send, the cron's retry must not double-email the CEO. A send that
-  // fails cleanly resets the marker below so a later tick retries.
-  await store.saveDigest(today, content, new Date().toISOString())
+  // mid-send, the cron's retry must not double-email. A send that fails
+  // cleanly resets the marker so a later tick retries.
+  await store.saveDigest(user.id, today, content, new Date().toISOString())
   try {
     await mailbox.sendFrom(sender, {
-      to: settings.digestTo,
+      to: digestTo,
       subject: `Morning Digest — ${humanDate}`,
       body: buildText(content, humanDate, siteUrl),
       html: buildHtml(content, humanDate, siteUrl),
     })
   } catch (e) {
-    await store.saveDigest(today, content, null).catch(() => {})
-    // The digest is already stored, so the app tab still shows it.
-    throw new HttpError(
-      502,
-      `Digest built but the email failed to send: ${e instanceof Error ? e.message : String(e)}`,
-    )
+    await store.saveDigest(user.id, today, content, null).catch(() => {})
+    console.error('digest email failed for', user.email, e)
+    return {
+      sent: false,
+      reason: `Digest built but the email failed to send: ${e instanceof Error ? e.message : 'error'}`,
+    }
   }
 
-  return json({ ok: true, sent: true })
+  return { sent: true }
+}
+
+export default handle(async (req) => {
+  if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
+  const sessionUser = requireCronOrSession(req) // user id, or null on the cron path
+
+  const body = (await req.json().catch(() => ({}))) as { force?: boolean }
+  // A signed-in user pressing the button expects it to run NOW; only the pure
+  // cron path is bound to each user's configured hour.
+  const forced = body.force === true || sessionUser !== null
+
+  try {
+    await runSync({})
+  } catch (e) {
+    console.error('sync during digest failed', e)
+  }
+
+  const targets = sessionUser !== null ? [await getUser(sessionUser)] : await listUsers()
+  const results: { user: string; sent: boolean; reason?: string }[] = []
+  for (const user of targets) {
+    try {
+      const r = await runDigestFor(user, forced)
+      results.push({ user: user.email, ...r })
+    } catch (e) {
+      console.error('digest failed for', user.email, e)
+      results.push({
+        user: user.email,
+        sent: false,
+        reason: e instanceof Error ? e.message : 'failed',
+      })
+    }
+  }
+
+  return json({ ok: true, sent: results.some((r) => r.sent), results })
 })
 
 export const config: Config = { path: '/api/digest/run' }

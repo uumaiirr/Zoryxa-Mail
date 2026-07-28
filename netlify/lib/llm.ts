@@ -1,7 +1,6 @@
 import { GoogleGenAI } from '@google/genai'
 import Groq from 'groq-sdk'
 import { env, optionalEnv } from './env'
-import { getSettings } from './store'
 
 // Free-tier defaults, verified July 2026. Both are overridable via env vars.
 // Gemini free tier: ~15 RPM / 1,500 requests/day. Groq free tier: 30 RPM / 1,000/day.
@@ -15,6 +14,8 @@ export interface LlmOpts {
   json?: boolean
   maxTokens?: number
   temperature?: number
+  /** Per-user provider choice; falls back to the LLM_PROVIDER env default. */
+  provider?: 'gemini' | 'groq'
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -88,8 +89,8 @@ async function groqCall(prompt: string, opts: LlmOpts): Promise<string> {
 }
 
 export async function llmText(prompt: string, opts: LlmOpts = {}): Promise<string> {
-  const settings = await getSettings()
-  const call = settings.llmProvider === 'groq' ? groqCall : geminiCall
+  const provider = opts.provider ?? (process.env.LLM_PROVIDER === 'groq' ? 'groq' : 'gemini')
+  const call = provider === 'groq' ? groqCall : geminiCall
   return withRetry(() => call(prompt, opts))
 }
 

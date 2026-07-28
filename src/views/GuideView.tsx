@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { ReactNode } from 'react'
 import TopBar from '../components/TopBar'
+import ZoryxaLogo from '../components/ZoryxaLogo'
 
 function Code({ children }: { children: ReactNode }) {
   return (
@@ -56,11 +57,6 @@ function Section({
 }
 
 const I = {
-  sparkle: (
-    <svg viewBox="0 0 24 24" className="w-5 h-5" fill="currentColor" aria-hidden="true">
-      <path d="M12 2l2.1 6.1L20.5 10l-6.4 1.9L12 18l-2.1-6.1L3.5 10l6.4-1.9L12 2z" />
-    </svg>
-  ),
   envelope: (
     <svg viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2} strokeLinejoin="round" aria-hidden="true">
       <rect x="3" y="5" width="18" height="14" rx="2" />
@@ -108,7 +104,7 @@ export default function GuideView() {
     <>
       <TopBar back title="Guide" subtitle="Connect your mail, step by step" />
       <div className="max-w-screen-sm mx-auto px-4 pb-28 anim-in pt-3">
-        <Section icon={I.sparkle} title="How this app works" defaultOpen>
+        <Section icon={<ZoryxaLogo size={18} variant="current" />} title="How this app works" defaultOpen>
           <p>
             Every mailbox you connect is read securely, and each email is summarized and
             categorized the moment it arrives. Mail that genuinely deserves a reply comes with one

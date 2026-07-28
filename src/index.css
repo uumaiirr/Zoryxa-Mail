@@ -52,6 +52,13 @@ body {
   overscroll-behavior-y: none;
   font-size: 16px;
   letter-spacing: 0.005em;
+  /* Ambient electric glow at the top of every screen — depth without noise. */
+  background-image: radial-gradient(
+    620px 340px at 50% -140px,
+    rgb(var(--c-gold) / 0.09),
+    transparent 70%
+  );
+  background-repeat: no-repeat;
 }
 
 /* Small phones with dynamic browser chrome: prefer dvh over vh */
