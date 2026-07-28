@@ -26,12 +26,12 @@ export default {
       },
       fontFamily: {
         sans: [
-          'Jost',
+          'DM Sans',
           '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto',
           'Helvetica Neue', 'Arial', 'Noto Sans', 'sans-serif',
         ],
         display: [
-          'Montserrat',
+          'Space Grotesk',
           '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif',
         ],
       },

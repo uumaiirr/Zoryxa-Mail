@@ -16,9 +16,29 @@ export default handle(async (req) => {
   if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
   const userId = requireSession(req)
 
-  const body = await readJson<{ messages: ChatMessage[]; emailId?: string }>(req)
+  const body = await readJson<{
+    messages: ChatMessage[]
+    emailId?: string
+    attachment?: { mimeType: string; dataBase64: string; name?: string }
+  }>(req)
   if (!Array.isArray(body.messages) || body.messages.length === 0) {
     throw new HttpError(400, 'Ask me something first')
+  }
+
+  // Optional image/PDF the user attached (understood like ChatGPT/Gemini).
+  let attachment: { mimeType: string; dataBase64: string } | undefined
+  let attachmentNote = ''
+  if (body.attachment) {
+    const mt = String(body.attachment.mimeType ?? '')
+    const data = String(body.attachment.dataBase64 ?? '')
+    if (!/^image\//.test(mt) && mt !== 'application/pdf') {
+      throw new HttpError(400, 'Only images and PDF files can be attached')
+    }
+    if (data.length === 0 || data.length > 5_600_000) {
+      throw new HttpError(400, 'Attachments must be under 4 MB')
+    }
+    attachment = { mimeType: mt, dataBase64: data }
+    attachmentNote = `\nThe executive attached a file (${body.attachment.name ?? mt}) — analyze it as part of your answer.`
   }
   const messages = body.messages
     .filter(
@@ -74,8 +94,14 @@ ${fullBody.slice(0, 5000)}`
 
   const settings = await store.getSettings(userId)
   const reply = await llmText(
-    `MAIL CONTEXT\n${context}\n\nCONVERSATION\n${transcript}\n\nZoryxa AI:`,
-    { system: SYSTEM, maxTokens: 700, temperature: 0.5, provider: settings.llmProvider },
+    `MAIL CONTEXT\n${context}${attachmentNote}\n\nCONVERSATION\n${transcript}\n\nZoryxa AI:`,
+    {
+      system: SYSTEM,
+      maxTokens: 700,
+      temperature: 0.5,
+      provider: settings.llmProvider,
+      attachment,
+    },
   )
 
   return json({ reply: reply.trim() })

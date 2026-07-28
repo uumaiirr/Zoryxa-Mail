@@ -16,6 +16,8 @@ export interface LlmOpts {
   temperature?: number
   /** Per-user provider choice; falls back to the LLM_PROVIDER env default. */
   provider?: 'gemini' | 'groq'
+  /** Image or PDF understanding (Gemini only — the call auto-routes there). */
+  attachment?: { mimeType: string; dataBase64: string }
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -55,9 +57,25 @@ let groqClient: Groq | null = null
 
 async function geminiCall(prompt: string, opts: LlmOpts): Promise<string> {
   if (!geminiClient) geminiClient = new GoogleGenAI({ apiKey: env('GEMINI_API_KEY') })
+  const contents = opts.attachment
+    ? [
+        {
+          role: 'user',
+          parts: [
+            { text: prompt },
+            {
+              inlineData: {
+                mimeType: opts.attachment.mimeType,
+                data: opts.attachment.dataBase64,
+              },
+            },
+          ],
+        },
+      ]
+    : prompt
   const res = await geminiClient.models.generateContent({
     model: optionalEnv('GEMINI_MODEL') ?? GEMINI_DEFAULT_MODEL,
-    contents: prompt,
+    contents,
     config: {
       ...(opts.system ? { systemInstruction: opts.system } : {}),
       temperature: opts.temperature ?? 0.4,
@@ -71,6 +89,9 @@ async function geminiCall(prompt: string, opts: LlmOpts): Promise<string> {
 }
 
 async function groqCall(prompt: string, opts: LlmOpts): Promise<string> {
+  if (opts.attachment) {
+    throw new LlmError('Attachments are answered by Gemini — this should have auto-routed')
+  }
   if (!groqClient) groqClient = new Groq({ apiKey: env('GROQ_API_KEY') })
   const res = await groqClient.chat.completions.create({
     model: optionalEnv('GROQ_MODEL') ?? GROQ_DEFAULT_MODEL,
@@ -89,7 +110,9 @@ async function groqCall(prompt: string, opts: LlmOpts): Promise<string> {
 }
 
 export async function llmText(prompt: string, opts: LlmOpts = {}): Promise<string> {
-  const provider = opts.provider ?? (process.env.LLM_PROVIDER === 'groq' ? 'groq' : 'gemini')
+  let provider = opts.provider ?? (process.env.LLM_PROVIDER === 'groq' ? 'groq' : 'gemini')
+  // Vision/PDF understanding lives on Gemini — route attachments there.
+  if (opts.attachment) provider = 'gemini'
   const call = provider === 'groq' ? groqCall : geminiCall
   return withRetry(() => call(prompt, opts))
 }

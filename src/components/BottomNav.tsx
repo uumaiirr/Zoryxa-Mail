@@ -42,7 +42,7 @@ export default function BottomNav() {
           }
           aria-label="Zoryxa AI"
         >
-          <span className="w-12 h-12 -mt-4 rounded-2xl bg-navy text-white flex items-center justify-center shadow-lift ring-4 ring-mist">
+          <span className="w-12 h-12 -mt-4 rounded-2xl bg-navy text-white flex items-center justify-center shadow-lift ring-4 ring-mist glow-pulse">
             <ZoryxaLogo size={24} variant="current" />
           </span>
           AI

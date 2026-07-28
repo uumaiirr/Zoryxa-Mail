@@ -26,8 +26,34 @@ export default function ChatView() {
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [attachment, setAttachment] = useState<{
+    name: string
+    mimeType: string
+    dataBase64: string
+  } | null>(null)
+  const fileRef = useRef<HTMLInputElement | null>(null)
   const endRef = useRef<HTMLDivElement | null>(null)
   const cancelledRef = useRef(false)
+
+  function onPickFile(file: File | undefined) {
+    setError(null)
+    if (!file) return
+    if (!/^image\//.test(file.type) && file.type !== 'application/pdf') {
+      setError('Only images and PDF files can be attached.')
+      return
+    }
+    if (file.size > 4 * 1024 * 1024) {
+      setError('Attachments must be under 4 MB.')
+      return
+    }
+    const reader = new FileReader()
+    reader.onload = () => {
+      const result = String(reader.result ?? '')
+      const base64 = result.slice(result.indexOf(',') + 1)
+      if (base64) setAttachment({ name: file.name, mimeType: file.type, dataBase64: base64 })
+    }
+    reader.readAsDataURL(file)
+  }
 
   useEffect(() => {
     cancelledRef.current = false
@@ -41,16 +67,20 @@ export default function ChatView() {
   }, [messages, busy])
 
   async function send(text: string) {
-    const content = text.trim()
-    if (!content || busy) return
+    let content = text.trim()
+    if ((!content && !attachment) || busy) return
+    if (!content) content = 'Analyze the attached file.'
+    const att = attachment ?? undefined
+    if (att) content = `${content}\n(attached: ${att.name})`
     setError(null)
     setInput('')
     const next: ChatMessage[] = [...messages, { role: 'user', content }]
     setMessages(next)
     setBusy(true)
     try {
-      const r = await api.chat(next, emailId)
+      const r = await api.chat(next, emailId, att)
       if (cancelledRef.current) return
+      setAttachment(null)
       setMessages([...next, { role: 'assistant', content: r.reply }])
     } catch (e) {
       if (cancelledRef.current) return
@@ -156,6 +186,24 @@ export default function ChatView() {
       {/* Input bar, floating above the nav */}
       <div className="fixed bottom-20 inset-x-0 z-20 px-4">
         <div className="max-w-screen-sm mx-auto">
+          {attachment && (
+            <div className="mb-2 inline-flex items-center gap-2 card px-3 py-2 text-sm max-w-full">
+              <svg viewBox="0 0 24 24" className="w-4 h-4 text-golddeep shrink-0" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+              </svg>
+              <span className="truncate">{attachment.name}</span>
+              <button
+                type="button"
+                aria-label="Remove attachment"
+                onClick={() => setAttachment(null)}
+                className="w-6 h-6 flex items-center justify-center text-muted shrink-0"
+              >
+                <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" aria-hidden="true">
+                  <path d="M6 6l12 12M18 6 6 18" />
+                </svg>
+              </button>
+            </div>
+          )}
           <form
             className="card flex items-end gap-2 p-2 shadow-lift"
             onSubmit={(e) => {
@@ -163,6 +211,27 @@ export default function ChatView() {
               void send(input)
             }}
           >
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/*,application/pdf"
+              className="hidden"
+              onChange={(e) => {
+                onPickFile(e.target.files?.[0])
+                e.target.value = ''
+              }}
+            />
+            <button
+              type="button"
+              aria-label="Attach an image or PDF"
+              onClick={() => fileRef.current?.click()}
+              disabled={busy}
+              className="w-10 h-10 rounded-xl text-muted flex items-center justify-center shrink-0 transition active:scale-95 active:bg-mist disabled:opacity-40"
+            >
+              <svg viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+              </svg>
+            </button>
             <textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
@@ -178,7 +247,7 @@ export default function ChatView() {
             />
             <button
               type="submit"
-              disabled={busy || !input.trim()}
+              disabled={busy || (!input.trim() && !attachment)}
               aria-label="Send"
               className="w-10 h-10 rounded-xl bg-navy text-white flex items-center justify-center shrink-0 transition active:scale-95 disabled:opacity-40"
             >

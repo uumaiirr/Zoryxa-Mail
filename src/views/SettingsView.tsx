@@ -77,6 +77,35 @@ function messageOf(e: unknown): string {
   return e instanceof ApiError ? e.message : 'Something went wrong — please try again.'
 }
 
+// Known provider mail servers — typing the email pre-fills everything below.
+const O365 = { imapHost: 'outlook.office365.com', imapPort: '993', smtpHost: 'smtp.office365.com', smtpPort: '587' }
+const PROVIDER_PRESETS: Record<string, { imapHost: string; imapPort: string; smtpHost: string; smtpPort: string }> = {
+  'yahoo.com': { imapHost: 'imap.mail.yahoo.com', imapPort: '993', smtpHost: 'smtp.mail.yahoo.com', smtpPort: '465' },
+  'ymail.com': { imapHost: 'imap.mail.yahoo.com', imapPort: '993', smtpHost: 'smtp.mail.yahoo.com', smtpPort: '465' },
+  'outlook.com': O365,
+  'hotmail.com': O365,
+  'live.com': O365,
+  'msn.com': O365,
+  'icloud.com': { imapHost: 'imap.mail.me.com', imapPort: '993', smtpHost: 'smtp.mail.me.com', smtpPort: '587' },
+  'me.com': { imapHost: 'imap.mail.me.com', imapPort: '993', smtpHost: 'smtp.mail.me.com', smtpPort: '587' },
+}
+
+function detectServers(
+  email: string,
+): { imapHost: string; imapPort: string; smtpHost: string; smtpPort: string } | 'gmail' | null {
+  const domain = email.split('@')[1]?.trim().toLowerCase()
+  if (!domain || !domain.includes('.')) return null
+  if (domain === 'gmail.com' || domain === 'googlemail.com') return 'gmail'
+  return (
+    PROVIDER_PRESETS[domain] ?? {
+      imapHost: `mail.${domain}`,
+      imapPort: '993',
+      smtpHost: `mail.${domain}`,
+      smtpPort: '587',
+    }
+  )
+}
+
 const emptyImapForm = {
   label: '',
   email: '',
@@ -96,6 +125,7 @@ function AccountsSection() {
   const [formOpen, setFormOpen] = useState(false)
   const [form, setForm] = useState({ ...emptyImapForm })
   const [sameCreds, setSameCreds] = useState(true)
+  const [detectNote, setDetectNote] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
   const [styleBusyId, setStyleBusyId] = useState<string | null>(null)
@@ -294,7 +324,22 @@ function AccountsSection() {
           </div>
           <div>
             <label className="block text-xs font-medium text-muted mb-1.5">Email address</label>
-            <input type="email" className={inputClass} value={form.email} onChange={(e) => setF({ email: e.target.value })} />
+            <input
+              type="email"
+              className={inputClass}
+              value={form.email}
+              onChange={(e) => setF({ email: e.target.value })}
+              onBlur={() => {
+                const d = detectServers(form.email)
+                if (d === 'gmail') {
+                  setDetectNote('For Gmail, use the "Connect Gmail" button instead — faster and safer.')
+                } else if (d && !form.imapHost.trim()) {
+                  setF({ ...d, imapUser: form.imapUser.trim() || form.email.trim() })
+                  setDetectNote('Server details filled in automatically — adjust if IT gave you different ones.')
+                }
+              }}
+            />
+            {detectNote && <p className="text-xs text-golddeep mt-1.5">{detectNote}</p>}
           </div>
           <p className="text-xs font-semibold uppercase tracking-wide text-muted pt-1">Receiving (ask IT if unsure)</p>
           <div className="flex gap-2">

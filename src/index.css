@@ -1,12 +1,12 @@
 /* Self-hosted fonts (offline-capable, precached by the service worker).
-   Montserrat = brand display face (closest licensed match to the Zoryxa
-   specimen); Jost = geometric sans for body/UI. */
-@import '@fontsource/montserrat/500.css';
-@import '@fontsource/montserrat/700.css';
-@import '@fontsource/montserrat/800.css';
-@import '@fontsource/jost/400.css';
-@import '@fontsource/jost/500.css';
-@import '@fontsource/jost/600.css';
+   Space Grotesk = display face (distinctive, technical, premium);
+   DM Sans = body/UI (highly readable, warm). */
+@import '@fontsource/space-grotesk/500.css';
+@import '@fontsource/space-grotesk/600.css';
+@import '@fontsource/space-grotesk/700.css';
+@import '@fontsource/dm-sans/400.css';
+@import '@fontsource/dm-sans/500.css';
+@import '@fontsource/dm-sans/700.css';
 
 @tailwind base;
 @tailwind components;
@@ -120,6 +120,42 @@ body {
     animation-delay: 0ms !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+/* Route transitions: each screen rises in gently. */
+.page-in {
+  animation: fadeup 0.24s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Interactive cards lift on hover (pointer devices only). */
+@media (hover: hover) {
+  a.card,
+  button.card {
+    transition:
+      transform 0.18s cubic-bezier(0.22, 1, 0.36, 1),
+      box-shadow 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  a.card:hover,
+  button.card:hover {
+    transform: translateY(-2px);
+    box-shadow:
+      0 2px 4px rgba(0, 0, 0, 0.12),
+      0 12px 32px rgba(0, 0, 0, 0.18);
+  }
+}
+
+/* The Zoryxa AI button breathes. */
+@keyframes glowpulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgb(var(--c-gold) / 0.35);
+  }
+  50% {
+    box-shadow: 0 0 22px 2px rgb(var(--c-gold) / 0.55);
+  }
+}
+.glow-pulse {
+  animation: glowpulse 3.2s ease-in-out infinite;
 }
 
 /* Thin scrollbars on desktop */

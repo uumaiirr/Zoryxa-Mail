@@ -49,16 +49,19 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-mist">
-      <Routes>
-        <Route path="/" element={<InboxView />} />
-        <Route path="/email/:id" element={<EmailDetailView />} />
-        <Route path="/compose" element={<ComposeView />} />
-        <Route path="/chat" element={<ChatView />} />
-        <Route path="/digest" element={<DigestView />} />
-        <Route path="/settings" element={<SettingsView auth={auth} />} />
-        <Route path="/guide" element={<GuideView />} />
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+      {/* keyed wrapper re-triggers the entrance animation on every route change */}
+      <div key={location.pathname} className="page-in">
+        <Routes>
+          <Route path="/" element={<InboxView />} />
+          <Route path="/email/:id" element={<EmailDetailView />} />
+          <Route path="/compose" element={<ComposeView />} />
+          <Route path="/chat" element={<ChatView />} />
+          <Route path="/digest" element={<DigestView />} />
+          <Route path="/settings" element={<SettingsView auth={auth} />} />
+          <Route path="/guide" element={<GuideView />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </div>
       {showNav && <BottomNav />}
     </div>
   )

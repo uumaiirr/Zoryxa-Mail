@@ -63,10 +63,14 @@ export const api = {
 
   logout: () => j<{ ok: true }>('/api/logout', { method: 'POST', body: '{}' }),
 
-  chat: (messages: ChatMessage[], emailId?: string) =>
+  chat: (
+    messages: ChatMessage[],
+    emailId?: string,
+    attachment?: { mimeType: string; dataBase64: string; name: string },
+  ) =>
     j<{ reply: string }>('/api/chat', {
       method: 'POST',
-      body: JSON.stringify({ messages, emailId }),
+      body: JSON.stringify({ messages, emailId, attachment }),
     }),
 
   accounts: () => j<MailAccount[]>('/api/accounts'),

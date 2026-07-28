@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
+import { Link } from 'react-router-dom'
 import type { AppSettings, EmailSummary, MailAccount } from '../../shared/types'
 import { api, ApiError } from '../lib/api'
 import CategoryChips from '../components/CategoryChips'
@@ -304,23 +305,25 @@ export default function InboxView() {
             )}
           </div>
         )}
-        {accountsList.length > 1 && (
+        {accountsList.length > 0 && (
           <div
             className="px-4 pt-3 flex gap-2 overflow-x-auto"
             style={{ scrollbarWidth: 'none' }}
           >
-            <button
-              type="button"
-              onClick={() => handleAccountChange(null)}
-              className={
-                'rounded-full px-3.5 py-2 text-sm font-medium whitespace-nowrap shrink-0 min-h-[40px] transition ' +
-                (activeAccount === null
-                  ? 'bg-navy text-white'
-                  : 'bg-paper border border-line text-muted')
-              }
-            >
-              All inboxes
-            </button>
+            {accountsList.length > 1 && (
+              <button
+                type="button"
+                onClick={() => handleAccountChange(null)}
+                className={
+                  'rounded-full px-3.5 py-2 text-sm font-medium whitespace-nowrap shrink-0 min-h-[40px] transition ' +
+                  (activeAccount === null
+                    ? 'bg-navy text-white'
+                    : 'bg-paper border border-line text-muted')
+                }
+              >
+                All inboxes
+              </button>
+            )}
             {accountsList.map((a) => (
               <button
                 key={a.id}
@@ -330,12 +333,23 @@ export default function InboxView() {
                   'rounded-full px-3.5 py-2 text-sm font-medium whitespace-nowrap shrink-0 min-h-[40px] transition ' +
                   (activeAccount === a.id
                     ? 'bg-navy text-white'
-                    : 'bg-paper border border-line text-muted')
+                    : accountsList.length === 1
+                      ? 'bg-paper border border-line text-ink'
+                      : 'bg-paper border border-line text-muted')
                 }
               >
                 {a.label}
               </button>
             ))}
+            <Link
+              to="/settings"
+              className="rounded-full px-3.5 py-2 text-sm font-medium whitespace-nowrap shrink-0 min-h-[40px] border border-dashed border-gold/60 text-golddeep inline-flex items-center gap-1.5 active:scale-[0.97] transition"
+            >
+              <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" aria-hidden="true">
+                <path d="M12 5v14M5 12h14" />
+              </svg>
+              Add mailbox
+            </Link>
           </div>
         )}
         <div className="px-4 pt-3">
@@ -355,9 +369,25 @@ export default function InboxView() {
           {emails === null ? (
             <SkeletonList />
           ) : emails.length === 0 ? (
-            !error && (
+            !error &&
+            (accountsList.length === 0 ? (
+              <EmptyState
+                title="Connect your first mailbox"
+                hint="Gmail in two taps, or any office / personal mailbox with its IMAP details — server, port, email, password."
+                action={
+                  <div className="flex flex-col gap-2.5 w-full max-w-[260px]">
+                    <a href="/api/auth/google/start" className="btn-primary text-center">
+                      Connect Gmail
+                    </a>
+                    <Link to="/settings" className="btn-ghost text-center">
+                      Add IMAP mailbox
+                    </Link>
+                  </div>
+                }
+              />
+            ) : (
               <EmptyState title="No mail here yet" hint="New email is summarized automatically" />
-            )
+            ))
           ) : (
             <div className="space-y-3">{emailRows}</div>
           )}
