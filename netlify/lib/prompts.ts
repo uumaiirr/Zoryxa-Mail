@@ -83,11 +83,12 @@ Each object in "results" must have exactly these keys:
 - "actionRequired": true only if the CEO must reply, decide, approve, pay, attend, or delegate something; false for FYI, newsletters, receipts
 - "tasks": array of short imperative phrases describing what the CEO must do; [] if none
 - "suggestReply": true ONLY if this email genuinely deserves a written reply from the CEO himself — a direct question, a request needing his answer, an approval, an invitation, or an important relationship to maintain. False for invoices to pay, newsletters, receipts, automated mail, and anything a reply would not serve
+- "newCategory": ONLY when no existing category fits well, set "category" to "new" and provide {"label": short 1-3 word name, "description": one line of what belongs there}. Otherwise omit this key entirely. You own this taxonomy — organize the mailbox the way an elite chief of staff would.
 
 Category keys:
 ${categories.map((c) => `- "${c.key}" (${c.label}): ${c.description}`).join('\n')}
 
-Rules: use "category" values EXACTLY from the list. Be terse and factual. Do not invent deadlines. Respond with ONLY the JSON object.
+Rules: use "category" values EXACTLY from the list (or "new" with "newCategory" as described). Be terse and factual. Do not invent deadlines. Respond with ONLY the JSON object.
 
 Emails:
 ${emails

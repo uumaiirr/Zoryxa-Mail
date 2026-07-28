@@ -15,10 +15,17 @@ import SettingsView from './views/SettingsView'
 
 function Splash() {
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-[#0B0B0D] text-white">
-      <ZoryxaLogo size={64} variant="silver" />
-      <div className="font-display text-2xl font-extrabold tracking-[0.04em] mt-4">ZORYXA</div>
-      <div className="mt-2 text-sm text-white/50">Preparing your inbox…</div>
+    <div className="min-h-screen flex flex-col items-center justify-center bg-[#0B0B0D] text-white relative overflow-hidden">
+      <div
+        className="absolute w-[420px] h-[420px] rounded-full opacity-[0.14] blur-3xl"
+        style={{ background: 'radial-gradient(circle, #3B82F6 0%, transparent 65%)' }}
+        aria-hidden="true"
+      />
+      <div className="relative intro-logo">
+        <ZoryxaLogo size={76} variant="silver" />
+      </div>
+      <div className="relative font-display text-[26px] font-bold mt-5 intro-word">ZORYXA</div>
+      <div className="relative text-sm text-white/45 mt-2 intro-sub">Preparing your inbox…</div>
     </div>
   )
 }
@@ -26,13 +33,19 @@ function Splash() {
 export default function App() {
   const location = useLocation()
   const [auth, setAuth] = useState<AuthStatus | 'loading' | null>('loading')
+  const [introHold, setIntroHold] = useState(true)
 
   useEffect(() => {
     api
       .authStatus()
       .then(setAuth)
       .catch(() => setAuth(null))
+    // The branded intro plays fully even on instant loads.
+    const t = window.setTimeout(() => setIntroHold(false), 1200)
+    return () => window.clearTimeout(t)
   }, [])
+
+  if (auth === 'loading' || introHold) return <Splash />
 
   if (location.pathname === '/login') {
     return (
@@ -41,8 +54,6 @@ export default function App() {
       </Routes>
     )
   }
-
-  if (auth === 'loading') return <Splash />
   if (!auth || !auth.authed) return <Navigate to="/login" replace />
 
   const showNav = ['/', '/digest', '/settings', '/guide', '/chat'].includes(location.pathname)

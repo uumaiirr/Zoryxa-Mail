@@ -66,7 +66,7 @@ export const api = {
   chat: (
     messages: ChatMessage[],
     emailId?: string,
-    attachment?: { mimeType: string; dataBase64: string; name: string },
+    attachment?: { mimeType: string; name: string; dataBase64?: string; storagePath?: string },
   ) =>
     j<{ reply: string }>('/api/chat', {
       method: 'POST',
@@ -87,8 +87,21 @@ export const api = {
       body: JSON.stringify(patch),
     }),
 
-  emails: (params: { category?: string; account?: string; limit?: number; before?: string } = {}) =>
-    j<EmailSummary[]>(`/api/emails${qs(params)}`),
+  emails: (
+    params: {
+      folder?: 'inbox' | 'sent'
+      category?: string
+      account?: string
+      limit?: number
+      before?: string
+    } = {},
+  ) => j<EmailSummary[]>(`/api/emails${qs(params)}`),
+
+  uploadUrl: (file: { name: string; mimeType: string; size: number }) =>
+    j<{ path: string; signedUrl: string; token: string }>('/api/upload-url', {
+      method: 'POST',
+      body: JSON.stringify(file),
+    }),
 
   email: (id: string) => j<EmailDetail>(`/api/emails/${encodeURIComponent(id)}`),
 

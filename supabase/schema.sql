@@ -38,6 +38,7 @@ create table if not exists emails (
   account_id uuid not null references accounts(id) on delete cascade,
   user_id uuid not null references users(id) on delete cascade,
   provider_id text not null, -- gmail message id, or imap uid
+  folder text not null default 'inbox' check (folder in ('inbox','sent')),
   thread_id text not null default '',
   from_name text not null default '',
   from_email text not null default '',
@@ -60,6 +61,7 @@ create table if not exists emails (
   created_at timestamptz not null default now()
 );
 create index if not exists emails_user_received_idx on emails (user_id, received_at desc);
+create index if not exists emails_user_folder_idx on emails (user_id, folder, received_at desc);
 create index if not exists emails_account_received_idx on emails (account_id, received_at desc);
 create index if not exists emails_category_idx on emails (category);
 create index if not exists emails_pending_idx on emails (summarized) where summarized = false;

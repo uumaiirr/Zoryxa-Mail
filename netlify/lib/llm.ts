@@ -16,8 +16,28 @@ export interface LlmOpts {
   temperature?: number
   /** Per-user provider choice; falls back to the LLM_PROVIDER env default. */
   provider?: 'gemini' | 'groq'
-  /** Image or PDF understanding (Gemini only — the call auto-routes there). */
-  attachment?: { mimeType: string; dataBase64: string }
+  /** Image or PDF understanding (Gemini only — the call auto-routes there).
+   *  Small files inline as base64; large ones pre-upload via geminiUploadFile
+   *  and pass their fileUri. */
+  attachment?: { mimeType: string; dataBase64?: string; fileUri?: string }
+}
+
+/** Uploads a large file to Gemini's file store and waits until it's ready. */
+export async function geminiUploadFile(buf: Buffer, mimeType: string): Promise<string> {
+  if (!geminiClient) geminiClient = new GoogleGenAI({ apiKey: env('GEMINI_API_KEY') })
+  const uploaded = await geminiClient.files.upload({
+    file: new Blob([new Uint8Array(buf)], { type: mimeType }),
+    config: { mimeType },
+  })
+  let file = uploaded
+  for (let i = 0; i < 15 && file.state === 'PROCESSING'; i++) {
+    await new Promise((r) => setTimeout(r, 2000))
+    file = await geminiClient.files.get({ name: file.name ?? '' })
+  }
+  if (file.state !== 'ACTIVE' || !file.uri) {
+    throw new LlmError('The file could not be processed — try a smaller one')
+  }
+  return file.uri
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -63,12 +83,19 @@ async function geminiCall(prompt: string, opts: LlmOpts): Promise<string> {
           role: 'user',
           parts: [
             { text: prompt },
-            {
-              inlineData: {
-                mimeType: opts.attachment.mimeType,
-                data: opts.attachment.dataBase64,
-              },
-            },
+            opts.attachment.fileUri
+              ? {
+                  fileData: {
+                    fileUri: opts.attachment.fileUri,
+                    mimeType: opts.attachment.mimeType,
+                  },
+                }
+              : {
+                  inlineData: {
+                    mimeType: opts.attachment.mimeType,
+                    data: opts.attachment.dataBase64 ?? '',
+                  },
+                },
           ],
         },
       ]

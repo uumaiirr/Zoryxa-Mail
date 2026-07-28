@@ -649,6 +649,10 @@ export default function SettingsView(props: { auth: AuthStatus }) {
             </Section>
 
             <Section title="Categories" icon={sectionIcon.tag}>
+              <p className="text-xs text-muted mb-3">
+                Zoryxa creates and grows these automatically as your mail arrives — rename or
+                remove anything, but you never have to add one yourself.
+              </p>
               {settings.categories.map((cat, i) => (
                 <div key={cat.key}>
                   {i > 0 && <div className="border-t border-line my-3" />}

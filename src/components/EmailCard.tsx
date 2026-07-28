@@ -30,6 +30,8 @@ export default function EmailCard(props: {
   accountLabel?: string
 }) {
   const { email, category, accountLabel } = props
+  const isSent = email.folder === 'sent'
+  const displayName = isSent ? `To: ${email.toEmails[0] ?? email.subject}` : email.fromName
   const hasChips =
     category !== undefined ||
     email.actionRequired ||
@@ -62,7 +64,7 @@ export default function EmailCard(props: {
                 : undefined
             }
           >
-            {initialsOf(email.fromName)}
+            {initialsOf(isSent ? (email.toEmails[0] ?? '?') : email.fromName)}
           </div>
           {!email.isRead && (
             <span className="absolute -top-0.5 -right-0.5 w-3 h-3 rounded-full bg-gold border-2 border-paper" />
@@ -72,7 +74,7 @@ export default function EmailCard(props: {
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <span className="text-[15px] font-semibold truncate min-w-0 flex-1">
-              {email.fromName}
+              {displayName}
             </span>
             <span className="text-xs text-muted shrink-0">{formatTime(email.receivedAt)}</span>
           </div>
@@ -81,8 +83,8 @@ export default function EmailCard(props: {
             {email.subject}
           </p>
 
-          {email.summarized && email.tldr ? (
-            <p className="text-sm text-muted line-clamp-2 mt-1">{email.tldr}</p>
+          {email.summarized ? (
+            <p className="text-sm text-muted line-clamp-2 mt-1">{email.tldr || email.snippet}</p>
           ) : (
             <div className="mt-1">
               <p className="text-sm italic text-muted/70 line-clamp-2">{email.snippet}</p>

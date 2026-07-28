@@ -122,6 +122,37 @@ body {
   }
 }
 
+/* Branded intro: the Z pops, the wordmark tightens into place. */
+@keyframes logopop {
+  0% {
+    opacity: 0;
+    transform: scale(0.82);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+@keyframes wordin {
+  0% {
+    opacity: 0;
+    letter-spacing: 0.3em;
+  }
+  100% {
+    opacity: 1;
+    letter-spacing: 0.04em;
+  }
+}
+.intro-logo {
+  animation: logopop 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.intro-word {
+  animation: wordin 0.7s 0.25s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.intro-sub {
+  animation: fadeup 0.5s 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
 /* Route transitions: each screen rises in gently. */
 .page-in {
   animation: fadeup 0.24s cubic-bezier(0.22, 1, 0.36, 1) both;

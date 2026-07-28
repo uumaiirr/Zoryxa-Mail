@@ -2,10 +2,11 @@ import type { Config } from '@netlify/functions'
 import type { ChatMessage } from '../../shared/types'
 import * as accounts from '../lib/accounts'
 import { handle, HttpError, json, readJson } from '../lib/http'
-import { llmText } from '../lib/llm'
+import { geminiUploadFile, llmText } from '../lib/llm'
 import * as mailbox from '../lib/mailbox'
 import { requireSession } from '../lib/session'
 import * as store from '../lib/store'
+import { db } from '../lib/supabase'
 
 const SYSTEM = `You are Zoryxa AI, the executive email intelligence inside Zoryxa Mail.
 You help a busy executive think about their mail: feasibility, risk, negotiation angles, priorities, what to reply and how, what to ignore.
@@ -19,25 +20,39 @@ export default handle(async (req) => {
   const body = await readJson<{
     messages: ChatMessage[]
     emailId?: string
-    attachment?: { mimeType: string; dataBase64: string; name?: string }
+    attachment?: { mimeType: string; dataBase64?: string; storagePath?: string; name?: string }
   }>(req)
   if (!Array.isArray(body.messages) || body.messages.length === 0) {
     throw new HttpError(400, 'Ask me something first')
   }
 
   // Optional image/PDF the user attached (understood like ChatGPT/Gemini).
-  let attachment: { mimeType: string; dataBase64: string } | undefined
+  // Small files arrive inline; large ones (≤50 MB) came via /api/upload-url
+  // into private storage and are handed to Gemini's file store here.
+  let attachment: { mimeType: string; dataBase64?: string; fileUri?: string } | undefined
   let attachmentNote = ''
+  let cleanupPath: string | null = null
   if (body.attachment) {
     const mt = String(body.attachment.mimeType ?? '')
-    const data = String(body.attachment.dataBase64 ?? '')
     if (!/^image\//.test(mt) && mt !== 'application/pdf') {
       throw new HttpError(400, 'Only images and PDF files can be attached')
     }
-    if (data.length === 0 || data.length > 5_600_000) {
-      throw new HttpError(400, 'Attachments must be under 4 MB')
+    if (typeof body.attachment.storagePath === 'string' && body.attachment.storagePath) {
+      const path = body.attachment.storagePath
+      if (!path.startsWith(`${userId}/`)) throw new HttpError(404, 'Attachment not found')
+      const { data, error } = await db().storage.from('ai-uploads').download(path)
+      if (error || !data) throw new HttpError(400, 'The attachment upload did not complete — try again')
+      const buf = Buffer.from(await data.arrayBuffer())
+      if (buf.length > 52_500_000) throw new HttpError(400, 'Attachments must be under 50 MB')
+      cleanupPath = path
+      attachment = { mimeType: mt, fileUri: await geminiUploadFile(buf, mt) }
+    } else {
+      const data = String(body.attachment.dataBase64 ?? '')
+      if (data.length === 0 || data.length > 5_600_000) {
+        throw new HttpError(400, 'Inline attachments must be under 4 MB')
+      }
+      attachment = { mimeType: mt, dataBase64: data }
     }
-    attachment = { mimeType: mt, dataBase64: data }
     attachmentNote = `\nThe executive attached a file (${body.attachment.name ?? mt}) — analyze it as part of your answer.`
   }
   const messages = body.messages
@@ -103,6 +118,10 @@ ${fullBody.slice(0, 5000)}`
       attachment,
     },
   )
+
+  if (cleanupPath) {
+    void db().storage.from('ai-uploads').remove([cleanupPath])
+  }
 
   return json({ reply: reply.trim() })
 })

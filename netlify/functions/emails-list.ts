@@ -11,12 +11,14 @@ export default handle(async (req) => {
   const category = params.get('category')
   const account = params.get('account')
   const before = params.get('before')
+  const folder = params.get('folder') === 'sent' ? ('sent' as const) : ('inbox' as const)
 
   const rawLimit = Number.parseInt(params.get('limit') ?? '', 10)
   const limit = Number.isFinite(rawLimit) ? Math.min(Math.max(rawLimit, 1), 100) : 50
 
   const emails = await store.listEmails({
     userId,
+    folder,
     category: category || undefined,
     account: account || undefined,
     limit,

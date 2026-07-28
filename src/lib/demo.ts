@@ -55,7 +55,7 @@ const accounts: MailAccount[] = [
 const PERSONAL_IDS = new Set(['d7', 'd10'])
 const accountOf = (id: string) => (PERSONAL_IDS.has(id) ? 'acc-personal' : 'acc-office')
 
-interface DemoEmail extends Omit<EmailSummary, 'hasDraft' | 'accountId'> {
+interface DemoEmail extends Omit<EmailSummary, 'hasDraft' | 'accountId' | 'folder'> {
   body: string
 }
 
@@ -432,6 +432,7 @@ export function installDemo(): void {
     }
 
     if (path === '/api/emails') {
+      if (params.get('folder') === 'sent') return json([])
       const cat = params.get('category')
       const account = params.get('account')
       const list: EmailSummary[] = emails
@@ -440,6 +441,7 @@ export function installDemo(): void {
         .map(({ body: _body, ...rest }) => ({
           ...rest,
           accountId: accountOf(rest.id),
+          folder: 'inbox' as const,
           hasDraft: Boolean(drafts[rest.id]),
         }))
       return json(list)
@@ -453,6 +455,7 @@ export function installDemo(): void {
       const detail: EmailDetail = {
         ...e,
         accountId: accountOf(e.id),
+        folder: 'inbox',
         isRead: true,
         hasDraft: Boolean(drafts[e.id]),
         draft: drafts[e.id] ?? null,

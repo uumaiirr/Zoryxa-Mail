@@ -62,11 +62,13 @@ export default function InboxView() {
   const [accountsList, setAccountsList] = useState<MailAccount[]>([])
   const [activeCategory, setActiveCategory] = useState<string | null>(null)
   const [activeAccount, setActiveAccount] = useState<string | null>(null)
+  const [activeFolder, setActiveFolder] = useState<'inbox' | 'sent'>('inbox')
   const [syncing, setSyncing] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const activeCategoryRef = useRef<string | null>(null)
   const activeAccountRef = useRef<string | null>(null)
+  const activeFolderRef = useRef<'inbox' | 'sent'>('inbox')
   const cancelledRef = useRef(false)
 
   // Refetch the full list (for counts) and the visible list for the active
@@ -76,18 +78,22 @@ export default function InboxView() {
   const refetchEmails = useCallback(async () => {
     const cat = activeCategoryRef.current
     const acc = activeAccountRef.current
+    const fol = activeFolderRef.current
     const stale = () =>
-      cancelledRef.current || activeCategoryRef.current !== cat || activeAccountRef.current !== acc
-    if (cat) {
+      cancelledRef.current ||
+      activeCategoryRef.current !== cat ||
+      activeAccountRef.current !== acc ||
+      activeFolderRef.current !== fol
+    if (cat && fol === 'inbox') {
       const [full, filtered] = await Promise.all([
-        api.emails({ account: acc ?? undefined, limit: 100 }),
-        api.emails({ category: cat, account: acc ?? undefined, limit: 100 }),
+        api.emails({ folder: fol, account: acc ?? undefined, limit: 100 }),
+        api.emails({ folder: fol, category: cat, account: acc ?? undefined, limit: 100 }),
       ])
       if (stale()) return
       setAllEmails(full)
       setEmails(filtered)
     } else {
-      const full = await api.emails({ account: acc ?? undefined, limit: 100 })
+      const full = await api.emails({ folder: fol, account: acc ?? undefined, limit: 100 })
       if (stale()) return
       setAllEmails(full)
       setEmails(full)
@@ -179,7 +185,12 @@ export default function InboxView() {
     setEmails(null)
     const acc = activeAccountRef.current
     api
-      .emails({ category: key ?? undefined, account: acc ?? undefined, limit: 100 })
+      .emails({
+        folder: activeFolderRef.current,
+        category: key ?? undefined,
+        account: acc ?? undefined,
+        limit: 100,
+      })
       .then((list) => {
         if (cancelledRef.current || activeCategoryRef.current !== key) return
         setEmails(list)
@@ -200,6 +211,25 @@ export default function InboxView() {
       setEmails(null)
       void refetchEmails().catch((e) => {
         if (cancelledRef.current || activeAccountRef.current !== id) return
+        setError(messageOf(e))
+        setEmails([])
+      })
+    },
+    [refetchEmails],
+  )
+
+  const handleFolderChange = useCallback(
+    (folder: 'inbox' | 'sent') => {
+      if (activeFolderRef.current === folder) return
+      setActiveFolder(folder)
+      activeFolderRef.current = folder
+      // Categories are an inbox concept — clear them when viewing Sent.
+      setActiveCategory(null)
+      activeCategoryRef.current = null
+      setError(null)
+      setEmails(null)
+      void refetchEmails().catch((e) => {
+        if (cancelledRef.current || activeFolderRef.current !== folder) return
         setError(messageOf(e))
         setEmails([])
       })
@@ -293,7 +323,24 @@ export default function InboxView() {
       />
 
       <div className="max-w-screen-sm mx-auto pb-28 anim-in">
-        {settings !== null && (
+        <div className="px-4 pt-3">
+          <div className="bg-paper border border-line rounded-xl p-1 flex">
+            {(['inbox', 'sent'] as const).map((f) => (
+              <button
+                key={f}
+                type="button"
+                onClick={() => handleFolderChange(f)}
+                className={
+                  'flex-1 py-2 rounded-lg text-sm font-semibold transition min-h-[38px] ' +
+                  (activeFolder === f ? 'bg-navy text-white shadow-card' : 'text-muted')
+                }
+              >
+                {f === 'inbox' ? 'Inbox' : 'Sent'}
+              </button>
+            ))}
+          </div>
+        </div>
+        {settings !== null && activeFolder === 'inbox' && (
           <div className="px-4 pt-4">
             <p className="font-display text-[15px] text-muted">
               {greetingFor(new Date().getHours())}
@@ -353,12 +400,14 @@ export default function InboxView() {
           </div>
         )}
         <div className="px-4 pt-3">
-          <CategoryChips
-            categories={settings?.categories ?? []}
-            active={activeCategory}
-            onChange={handleCategoryChange}
-            counts={counts}
-          />
+          {activeFolder === 'inbox' && (
+            <CategoryChips
+              categories={settings?.categories ?? []}
+              active={activeCategory}
+              onChange={handleCategoryChange}
+              counts={counts}
+            />
+          )}
         </div>
 
         <div className="px-4 mt-3">

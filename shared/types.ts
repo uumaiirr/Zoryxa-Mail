@@ -35,9 +35,12 @@ export interface ImapAccountInput {
   smtpPass: string
 }
 
+export type MailFolder = 'inbox' | 'sent'
+
 export interface EmailSummary {
   id: string // opaque: `${accountId}~${providerId}`
   accountId: string
+  folder: MailFolder
   threadId: string
   fromName: string
   fromEmail: string

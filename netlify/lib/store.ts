@@ -24,6 +24,7 @@ function rowToEmail(r: any): EmailSummary {
   return {
     id: r.id,
     accountId: r.account_id,
+    folder: r.folder === 'sent' ? 'sent' : 'inbox',
     threadId: r.thread_id,
     fromName: r.from_name,
     fromEmail: r.from_email,
@@ -52,12 +53,16 @@ export async function upsertEmailMetas(
   accountId: string,
   userId: string,
   metas: MailMeta[],
+  folder: 'inbox' | 'sent' = 'inbox',
 ): Promise<number> {
   if (metas.length === 0) return 0
   const rows = metas.map((m) => ({
     id: emailKey(accountId, m.providerId),
     account_id: accountId,
     user_id: userId,
+    folder,
+    // Sent mail is browsable history — it skips the AI pipeline entirely.
+    ...(folder === 'sent' ? { summarized: true, category: 'sent' } : {}),
     provider_id: m.providerId,
     thread_id: m.threadId,
     from_name: m.fromName,
@@ -74,19 +79,25 @@ export async function upsertEmailMetas(
   return check(res, 'upsertEmailMetas')?.length ?? 0
 }
 
-/** Provider ids already stored for an account since `sinceIso`. */
-export async function knownProviderIds(accountId: string, sinceIso: string): Promise<Set<string>> {
+/** Provider ids already stored for an account+folder since `sinceIso`. */
+export async function knownProviderIds(
+  accountId: string,
+  sinceIso: string,
+  folder: 'inbox' | 'sent' = 'inbox',
+): Promise<Set<string>> {
   const res = await db()
     .from('emails')
     .select('provider_id')
     .eq('account_id', accountId)
+    .eq('folder', folder)
     .gte('received_at', sinceIso)
-    .limit(1000)
+    .limit(2000)
   return new Set(check(res, 'knownProviderIds').map((r: { provider_id: string }) => r.provider_id))
 }
 
 export async function listEmails(opts: {
   userId: string
+  folder?: 'inbox' | 'sent'
   category?: string
   account?: string
   limit?: number
@@ -96,6 +107,7 @@ export async function listEmails(opts: {
     .from('emails')
     .select('*')
     .eq('user_id', opts.userId)
+    .eq('folder', opts.folder ?? 'inbox')
     .order('received_at', { ascending: false })
     .limit(Math.min(opts.limit ?? 50, 100))
   if (opts.category) q = q.eq('category', opts.category)
@@ -132,6 +144,7 @@ export async function listUnsummarized(limit: number): Promise<EmailSummary[]> {
     .from('emails')
     .select('*')
     .eq('summarized', false)
+    .eq('folder', 'inbox')
     .order('received_at', { ascending: false })
     .limit(limit)
   return check(res, 'listUnsummarized').map(rowToEmail)
@@ -142,6 +155,7 @@ export async function countUnsummarized(): Promise<number> {
     .from('emails')
     .select('id', { count: 'exact', head: true })
     .eq('summarized', false)
+    .eq('folder', 'inbox')
   if (error) throw new Error(`Database error (countUnsummarized): ${error.message}`)
   return count ?? 0
 }
@@ -175,17 +189,37 @@ export async function saveSummary(id: string, s: SummaryInput): Promise<void> {
   )
 }
 
-/** Reply-worthy, summarized emails that don't have an auto-draft yet. */
+/** Reply-worthy RECENT emails that don't have an auto-draft yet (history
+ *  backfill must never burn AI quota drafting replies to ancient threads). */
 export async function listNeedingDrafts(limit: number): Promise<EmailSummary[]> {
   const res = await db()
     .from('emails')
     .select('*')
     .eq('summarized', true)
     .eq('suggest_reply', true)
+    .eq('folder', 'inbox')
     .is('draft_body', null)
+    .gte('received_at', new Date(Date.now() - 7 * 86400_000).toISOString())
     .order('received_at', { ascending: false })
     .limit(limit)
   return check(res, 'listNeedingDrafts').map(rowToEmail)
+}
+
+/** The oldest stored email of an account+folder — the history-dig watermark. */
+export async function oldestEmail(
+  accountId: string,
+  folder: 'inbox' | 'sent',
+): Promise<{ receivedAt: string; providerId: string } | null> {
+  const res = await db()
+    .from('emails')
+    .select('received_at, provider_id')
+    .eq('account_id', accountId)
+    .eq('folder', folder)
+    .order('received_at', { ascending: true })
+    .limit(1)
+    .maybeSingle()
+  const row = check(res, 'oldestEmail')
+  return row ? { receivedAt: row.received_at, providerId: row.provider_id } : null
 }
 
 export async function saveDraft(id: string, subject: string, body: string): Promise<void> {
@@ -218,6 +252,7 @@ export async function emailsSince(userId: string, iso: string): Promise<EmailSum
     .from('emails')
     .select('*')
     .eq('user_id', userId)
+    .eq('folder', 'inbox')
     .gte('received_at', iso)
     .order('received_at', { ascending: false })
     .limit(200)

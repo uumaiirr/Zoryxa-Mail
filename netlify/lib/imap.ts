@@ -41,20 +41,37 @@ function addr(a: any): { name: string; email: string } {
   return { name: a?.name || a?.address || '', email: a?.address || '' }
 }
 
-/** Recent inbox envelopes, newest last; `known` UIDs are skipped. */
+/** Finds the server's Sent mailbox path (special-use flag, then common names). */
+async function sentMailboxPath(client: ImapFlow): Promise<string | null> {
+  const boxes = await client.list()
+  const sent =
+    boxes.find((b) => b.specialUse === '\\Sent') ??
+    boxes.find((b) => /^(sent|sent items|sent messages|INBOX\.Sent)$/i.test(b.path))
+  return sent?.path ?? null
+}
+
+/**
+ * Recent envelopes from INBOX or the Sent mailbox, newest last; `known`
+ * provider ids are skipped. Sent provider ids are prefixed 's:' because IMAP
+ * UIDs are only unique per mailbox.
+ */
 export async function fetchRecentMetas(
   acc: Account,
-  opts: { sinceDays: number; max: number; known: Set<string> },
+  opts: { sinceDays: number; max: number; known: Set<string>; folder?: 'inbox' | 'sent' },
 ): Promise<ImapMeta[]> {
   const client = clientFor(acc)
   const metas: ImapMeta[] = []
+  const isSent = opts.folder === 'sent'
   await client.connect()
   try {
-    const lock = await client.getMailboxLock('INBOX')
+    const path = isSent ? await sentMailboxPath(client) : 'INBOX'
+    if (!path) return []
+    const lock = await client.getMailboxLock(path)
     try {
       const since = new Date(Date.now() - opts.sinceDays * 86400_000)
       const uids = (await client.search({ since }, { uid: true })) || []
-      const fresh = uids.filter((u) => !opts.known.has(String(u))).slice(-opts.max)
+      const key = (u: number) => (isSent ? `s:${u}` : String(u))
+      const fresh = uids.filter((u) => !opts.known.has(key(u))).slice(-opts.max)
       if (fresh.length > 0) {
         for await (const msg of client.fetch(
           fresh,
@@ -69,8 +86,8 @@ export async function fetchRecentMetas(
             .filter(Boolean)
             .slice(0, 10)
           metas.push({
-            providerId: String(msg.uid),
-            threadId: String(msg.uid), // IMAP has no cheap thread id; message stands alone
+            providerId: key(msg.uid),
+            threadId: key(msg.uid), // IMAP has no cheap thread id; message stands alone
             fromName: from.name || from.email,
             fromEmail: from.email,
             toEmails,
@@ -102,12 +119,17 @@ function stripHtml(html: string): string {
     .trim()
 }
 
-/** Downloads and parses one message body (never persisted). */
-export async function fetchBody(acc: Account, uid: string): Promise<string> {
+/** Downloads and parses one message body (never persisted). 's:'-prefixed
+ *  provider ids live in the Sent mailbox. */
+export async function fetchBody(acc: Account, providerId: string): Promise<string> {
+  const isSent = providerId.startsWith('s:')
+  const uid = isSent ? providerId.slice(2) : providerId
   const client = clientFor(acc)
   await client.connect()
   try {
-    const lock = await client.getMailboxLock('INBOX')
+    const path = isSent ? await sentMailboxPath(client) : 'INBOX'
+    if (!path) throw new HttpError(404, 'Sent folder not found on the mail server')
+    const lock = await client.getMailboxLock(path)
     try {
       const msg = await client.fetchOne(uid, { source: true }, { uid: true })
       if (!msg || !msg.source) throw new HttpError(404, 'Email not found on the mail server')
@@ -159,6 +181,62 @@ export async function fetchSentSamples(
     await client.logout().catch(() => {})
   }
   return samples
+}
+
+/**
+ * History dig: envelopes with UIDs just below the oldest one we have stored —
+ * called repeatedly across syncs until the mailbox's very first email.
+ */
+export async function fetchOlderMetas(
+  acc: Account,
+  opts: { folder: 'inbox' | 'sent'; beforeProviderId: string; max: number },
+): Promise<ImapMeta[]> {
+  const isSent = opts.folder === 'sent'
+  const ceil = Number.parseInt(
+    isSent ? opts.beforeProviderId.replace(/^s:/, '') : opts.beforeProviderId,
+    10,
+  )
+  if (!Number.isFinite(ceil) || ceil <= 1) return []
+  const from = Math.max(1, ceil - Math.max(opts.max, 50) * 3) // over-fetch range; UIDs are sparse
+  const client = clientFor(acc)
+  const metas: ImapMeta[] = []
+  await client.connect()
+  try {
+    const path = isSent ? await sentMailboxPath(client) : 'INBOX'
+    if (!path) return []
+    const lock = await client.getMailboxLock(path)
+    try {
+      const key = (u: number) => (isSent ? `s:${u}` : String(u))
+      for await (const msg of client.fetch(
+        `${from}:${ceil - 1}`,
+        { envelope: true, internalDate: true, uid: true },
+        { uid: true },
+      )) {
+        const env = msg.envelope
+        if (!env) continue
+        const fromAddr = addr(env.from?.[0])
+        metas.push({
+          providerId: key(msg.uid),
+          threadId: key(msg.uid),
+          fromName: fromAddr.name || fromAddr.email,
+          fromEmail: fromAddr.email,
+          toEmails: [...(env.to ?? []), ...(env.cc ?? [])]
+            .map((a) => addr(a).email)
+            .filter(Boolean)
+            .slice(0, 10),
+          subject: env.subject || '(no subject)',
+          snippet: '',
+          receivedAt: new Date(msg.internalDate ?? Date.now()).toISOString(),
+          messageIdHeader: env.messageId ?? null,
+        })
+      }
+    } finally {
+      lock.release()
+    }
+  } finally {
+    await client.logout().catch(() => {})
+  }
+  return metas.slice(-opts.max)
 }
 
 /** Sends via the account's SMTP server. */

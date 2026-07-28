@@ -18,20 +18,22 @@ export interface MailMeta {
 
 const META_CHUNK = 5
 
-/** New inbox messages (metadata only), skipping already-known provider ids. */
+/** New messages (metadata only) from a folder, skipping known provider ids. */
 export async function fetchNewMetas(
   acc: Account,
-  opts: { sinceDays: number; max: number; known: Set<string> },
+  opts: { sinceDays: number; max: number; known: Set<string>; folder?: 'inbox' | 'sent' },
 ): Promise<MailMeta[]> {
   if (acc.kind === 'imap') {
     return imap.fetchRecentMetas(acc, opts)
   }
-  const ids = await gmail.listInboxIds(
-    acc,
-    `in:inbox -in:chats newer_than:${opts.sinceDays}d`,
-    opts.max,
-  )
-  const fresh = ids.filter((m) => !opts.known.has(m.id))
+  const query =
+    opts.folder === 'sent'
+      ? `in:sent newer_than:${opts.sinceDays}d`
+      : `in:inbox -in:chats newer_than:${opts.sinceDays}d`
+  const ids = await gmail.listInboxIds(acc, query, opts.max)
+  // Hard per-invocation cap: deep history backfills continue across syncs
+  // instead of risking one long invocation.
+  const fresh = ids.filter((m) => !opts.known.has(m.id)).slice(0, 100)
   const metas: MailMeta[] = []
   for (let i = 0; i < fresh.length; i += META_CHUNK) {
     const chunk = fresh.slice(i, i + META_CHUNK)
@@ -42,6 +44,52 @@ export async function fetchNewMetas(
           return { ...meta, providerId: meta.gmailId }
         } catch (e) {
           console.error('meta fetch failed', m.id, e)
+          return null
+        }
+      }),
+    )
+    for (const r of results) if (r) metas.push(r)
+  }
+  return metas
+}
+
+/**
+ * History dig: one batch of messages OLDER than the oldest stored one.
+ * Returns [] when the mailbox's beginning has been reached.
+ */
+export async function fetchOlderMetas(
+  acc: Account,
+  opts: {
+    folder: 'inbox' | 'sent'
+    oldest: { receivedAt: string; providerId: string }
+    known: Set<string>
+  },
+): Promise<MailMeta[]> {
+  if (acc.kind === 'imap') {
+    const metas = await imap.fetchOlderMetas(acc, {
+      folder: opts.folder,
+      beforeProviderId: opts.oldest.providerId,
+      max: 100,
+    })
+    return metas.filter((m) => !opts.known.has(m.providerId))
+  }
+  // Gmail: search strictly before the oldest stored day (inclusive overlap is
+  // deduped via `known` + idempotent upserts).
+  const d = new Date(opts.oldest.receivedAt)
+  const before = `${d.getUTCFullYear()}/${d.getUTCMonth() + 1}/${d.getUTCDate() + 1}`
+  const base = opts.folder === 'sent' ? 'in:sent' : 'in:inbox -in:chats'
+  const ids = await gmail.listInboxIds(acc, `${base} before:${before}`, 150)
+  const fresh = ids.filter((m) => !opts.known.has(m.id)).slice(0, 100)
+  const metas: MailMeta[] = []
+  for (let i = 0; i < fresh.length; i += META_CHUNK) {
+    const chunk = fresh.slice(i, i + META_CHUNK)
+    const results = await Promise.all(
+      chunk.map(async (m) => {
+        try {
+          const meta = await gmail.getMeta(acc, m.id)
+          return { ...meta, providerId: meta.gmailId }
+        } catch (e) {
+          console.error('older meta fetch failed', m.id, e)
           return null
         }
       }),

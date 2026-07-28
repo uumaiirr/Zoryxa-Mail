@@ -15,11 +15,27 @@ interface SummaryOut {
   index: number
   tldr: string
   category: string
+  newCategory?: { label?: string; description?: string }
   participants?: string[]
   deadlines?: Deadline[]
   actionRequired?: boolean
   tasks?: string[]
   suggestReply?: boolean
+}
+
+// Colors handed to AI-invented categories, in rotation.
+const CATEGORY_PALETTE = [
+  '#3B82F6', '#8B5CF6', '#10B981', '#F59E0B', '#EF4444',
+  '#06B6D4', '#EC4899', '#84CC16', '#F97316', '#6366F1',
+]
+const MAX_CATEGORIES = 14
+
+function slugify(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 40)
 }
 
 export function todayIn(timezone: string): string {
@@ -53,25 +69,65 @@ export async function runSync(
     const fresh = acc.lastSyncAt !== null && Date.now() - Date.parse(acc.lastSyncAt) < debounce
     if (fresh && !opts.force) continue
     anyFetched = true
-    try {
-      const sinceDays = firstEver ? 30 : 3
-      const known = await store.knownProviderIds(
-        acc.id,
-        new Date(Date.now() - (sinceDays + 1) * 86400_000).toISOString(),
-      )
-      const metas = await mailbox.fetchNewMetas(acc, {
-        sinceDays,
-        max: firstEver ? 100 : 50,
-        known,
-      })
-      // Persist in chunks so progress survives even if the invocation dies.
-      for (let i = 0; i < metas.length; i += 20) {
-        newEmails += await store.upsertEmailMetas(acc.id, acc.userId, metas.slice(i, i + 20))
+    // Inbox history goes deep (90 days on first sync, continued across runs);
+    // Sent is synced as browsable history and skips the AI pipeline.
+    const folders: { folder: 'inbox' | 'sent'; sinceDays: number; max: number }[] = [
+      { folder: 'inbox', sinceDays: firstEver ? 90 : 3, max: firstEver ? 300 : 50 },
+      { folder: 'sent', sinceDays: firstEver ? 90 : 3, max: firstEver ? 200 : 30 },
+    ]
+    let accNew = 0
+    for (const f of folders) {
+      try {
+        const known = await store.knownProviderIds(
+          acc.id,
+          new Date(Date.now() - (f.sinceDays + 1) * 86400_000).toISOString(),
+          f.folder,
+        )
+        const metas = await mailbox.fetchNewMetas(acc, {
+          sinceDays: f.sinceDays,
+          max: f.max,
+          known,
+          folder: f.folder,
+        })
+        // Persist in chunks so progress survives even if the invocation dies.
+        for (let i = 0; i < metas.length; i += 20) {
+          accNew += await store.upsertEmailMetas(
+            acc.id,
+            acc.userId,
+            metas.slice(i, i + 20),
+            f.folder,
+          )
+        }
+      } catch (e) {
+        console.error(`sync failed for ${acc.email} ${f.folder} (continuing)`, e)
       }
-      await accounts.touchAccountSync(acc.id)
-    } catch (e) {
-      console.error(`sync failed for account ${acc.email} (continuing with others)`, e)
     }
+
+    // History dig: one batch per folder per sync, walking backward until the
+    // very FIRST email in the mailbox is stored. Skipped while a busy recent
+    // fetch already filled this invocation.
+    if (accNew < 50) {
+      for (const f of ['inbox', 'sent'] as const) {
+        try {
+          const oldest = await store.oldestEmail(acc.id, f)
+          if (!oldest) continue
+          const known = await store.knownProviderIds(
+            acc.id,
+            new Date(Date.parse(oldest.receivedAt) - 3 * 86400_000).toISOString(),
+            f,
+          )
+          const dug = await mailbox.fetchOlderMetas(acc, { folder: f, oldest, known })
+          for (let i = 0; i < dug.length; i += 20) {
+            accNew += await store.upsertEmailMetas(acc.id, acc.userId, dug.slice(i, i + 20), f)
+          }
+        } catch (e) {
+          console.error(`history dig failed for ${acc.email} ${f} (continuing)`, e)
+        }
+      }
+    }
+
+    newEmails += accNew
+    await accounts.touchAccountSync(acc.id).catch(() => {})
   }
 
   const accById = new Map(all.map((a) => [a.id, a]))
@@ -89,6 +145,7 @@ export async function runSync(
     if (pendingRows.length === 0 || !batchUserId) break
     const settings = await store.getSettings(batchUserId)
     const validKeys = new Set(settings.categories.map((c) => c.key))
+    let categoriesDirty = false
     const today = todayIn(settings.timezone)
 
     const inputs: SummarizeInput[] = []
@@ -122,9 +179,31 @@ export async function runSync(
       for (const r of results) {
         const row = pendingRows[r.index]
         if (!row) continue
+        // The AI owns the taxonomy: when nothing fits, it invents a category
+        // that becomes part of this user's set from then on.
+        let category = r.category
+        if (!validKeys.has(category)) {
+          const label = r.newCategory?.label?.trim()
+          const key = label ? slugify(label) : ''
+          if (key && validKeys.has(key)) {
+            category = key
+          } else if (key && label && settings.categories.length < MAX_CATEGORIES) {
+            settings.categories.push({
+              key,
+              label: label.slice(0, 30),
+              color: CATEGORY_PALETTE[settings.categories.length % CATEGORY_PALETTE.length],
+              description: String(r.newCategory?.description ?? '').slice(0, 200),
+            })
+            validKeys.add(key)
+            categoriesDirty = true
+            category = key
+          } else {
+            category = 'system'
+          }
+        }
         await store.saveSummary(row.id, {
           tldr: String(r.tldr ?? '').slice(0, 300),
-          category: validKeys.has(r.category) ? r.category : 'system',
+          category,
           participants: (r.participants ?? []).map(String).slice(0, 10),
           deadlines: (r.deadlines ?? []).slice(0, 10),
           actionRequired: Boolean(r.actionRequired),
@@ -132,6 +211,11 @@ export async function runSync(
           suggestReply: Boolean(r.suggestReply),
         })
         summarized++
+      }
+      if (categoriesDirty) {
+        await store.saveSettings(batchUserId, settings).catch((e) => {
+          console.error('saving AI-created categories failed', e)
+        })
       }
     } catch (e) {
       // Rate limit or provider hiccup: stop here, emails stay pending and the
