@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { api, ApiError } from '../lib/api'
+import ZoryxaLogo from '../components/ZoryxaLogo'
 
 export default function LoginView() {
   const [passcode, setPasscode] = useState('')
@@ -28,24 +29,17 @@ export default function LoginView() {
   }
 
   return (
-    <div className="min-h-screen bg-navy text-white flex flex-col items-center justify-center px-6 safe-top safe-bottom">
-      <svg
-        viewBox="0 0 48 48"
-        className="w-16 h-16 text-gold"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth={2.4}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        aria-hidden="true"
-      >
-        <rect x="4" y="4" width="40" height="40" rx="11" />
-        <rect x="13" y="17" width="22" height="15" rx="2.5" />
-        <path d="m14 18.5 10 7.5 10-7.5" />
-      </svg>
+    // Brand hero: the Z mark in metallic silver on Deep Matte Black (locked).
+    <div className="min-h-screen bg-[#0B0B0D] text-[#D9DCE3] flex flex-col items-center justify-center px-6 safe-top safe-bottom">
+      <ZoryxaLogo size={84} variant="silver" />
 
-      <h1 className="font-display text-4xl font-bold tracking-tight mt-5">CEO Mail</h1>
-      <p className="text-white/60 text-sm mt-1">Your inbox, already read.</p>
+      <h1 className="font-display text-[34px] font-extrabold tracking-[0.04em] text-white mt-6">
+        ZORYXA
+      </h1>
+      <p className="font-display text-sm font-medium tracking-[0.52em] text-[#D9DCE3]/80 mt-0.5 ml-[0.52em]">
+        MAIL
+      </p>
+      <p className="text-[#D9DCE3]/50 text-sm mt-4">Your inbox, already read.</p>
 
       <form onSubmit={onSubmit} className="w-full flex flex-col items-center">
         <input
@@ -54,15 +48,19 @@ export default function LoginView() {
           value={passcode}
           onChange={(e) => setPasscode(e.target.value)}
           placeholder="Passcode"
-          className="mt-8 w-full max-w-xs rounded-xl bg-white/10 border border-white/15 px-4 py-3.5 text-center tracking-[0.3em] text-lg placeholder:tracking-normal placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-gold"
+          className="mt-8 w-full max-w-xs rounded-xl bg-white/[0.07] border border-white/10 px-4 py-3.5 text-center tracking-[0.3em] text-lg text-white placeholder:tracking-normal placeholder:text-white/35 focus:outline-none focus:ring-2 focus:ring-[#3B82F6] transition"
         />
         {error && <p className="text-red-300 text-sm mt-3">{error}</p>}
-        <button type="submit" className="btn-gold w-full max-w-xs mt-4" disabled={loading || !passcode}>
+        <button
+          type="submit"
+          className="w-full max-w-xs mt-4 rounded-xl bg-[#3B82F6] text-[#0B0B0D] font-semibold px-4 py-3 transition duration-200 active:scale-[0.98] disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
+          disabled={loading || !passcode}
+        >
           {loading ? 'Opening…' : 'Open my inbox'}
         </button>
       </form>
 
-      <p className="text-white/30 text-xs mt-10">Private — for Walid only</p>
+      <p className="text-white/25 text-xs mt-10 font-display tracking-[0.18em]">ZORYXA MAIL</p>
     </div>
   )
 }

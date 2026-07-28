@@ -1,25 +1,28 @@
 /** @type {import('tailwindcss').Config} */
+// ZORYXA MAIL — locked brand palette, exposed as CSS variables (src/index.css)
+// so light and dark modes share one token table.
+const v = (name) => `rgb(var(${name}) / <alpha-value>)`
+
 export default {
   content: ['./index.html', './src/**/*.{ts,tsx}'],
   theme: {
     extend: {
       colors: {
-        // Warm-ivory luxury neutrals + deep navy + antique gold.
-        ink: '#12202E', // primary text
-        navy: '#122B44', // primary actions, brand
-        navydeep: '#0A1A2C',
-        mist: '#F6F4EF', // app background (warm ivory)
-        paper: '#FFFFFF',
-        gold: '#C6A15B', // fills, badges, accents (pair with navy text)
-        golddeep: '#8F7434', // gold-toned TEXT on light bg (AA contrast)
-        goldsoft: '#F3ECDC',
-        line: '#E8E4DA', // hairlines, borders
-        muted: '#5C6B7A', // secondary text
+        ink: v('--c-ink'),
+        navy: v('--c-navy'),
+        navydeep: v('--c-navydeep'),
+        mist: v('--c-mist'),
+        paper: v('--c-paper'),
+        gold: v('--c-gold'),
+        golddeep: v('--c-golddeep'),
+        goldsoft: v('--c-goldsoft'),
+        line: v('--c-line'),
+        muted: v('--c-muted'),
       },
       boxShadow: {
-        card: '0 1px 2px rgba(18,32,46,.05), 0 6px 20px rgba(18,32,46,.05)',
-        lift: '0 2px 4px rgba(18,32,46,.06), 0 12px 32px rgba(18,32,46,.10)',
-        nav: '0 -4px 24px rgba(18,32,46,.08)',
+        card: '0 1px 2px rgba(0,0,0,.10), 0 6px 20px rgba(0,0,0,.10)',
+        lift: '0 2px 4px rgba(0,0,0,.12), 0 12px 32px rgba(0,0,0,.18)',
+        nav: '0 -4px 24px rgba(0,0,0,.14)',
       },
       fontFamily: {
         sans: [
@@ -27,7 +30,10 @@ export default {
           '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto',
           'Helvetica Neue', 'Arial', 'Noto Sans', 'sans-serif',
         ],
-        display: ['Bodoni Moda', 'Didot', 'Playfair Display', 'Georgia', 'serif'],
+        display: [
+          'Montserrat',
+          '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif',
+        ],
       },
       keyframes: {
         fadeup: {

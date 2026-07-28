@@ -24,50 +24,51 @@ function buildHtml(c: DigestContent, humanDate: string, siteUrl: string): string
     .filter((b) => b.count > 0)
     .map(
       (b) =>
-        `<tr><td style="padding:5px 0;"><div style="border-left:3px solid #C6A15B;padding:2px 0 2px 10px;font-size:14px;color:#12263A;">${esc(b.label)} <span style="color:#5C6B7A;">&mdash; ${b.count}</span></div></td></tr>`,
+        `<tr><td style="padding:5px 0;"><div style="border-left:3px solid #3B82F6;padding:2px 0 2px 10px;font-size:14px;color:#101114;">${esc(b.label)} <span style="color:#5A616C;">&mdash; ${b.count}</span></div></td></tr>`,
     )
     .join('')
 
   const topRows = c.topItems
     .map(
       (t) =>
-        `<tr><td style="padding:9px 0;border-bottom:1px solid #EDF0F3;font-size:14px;line-height:1.45;color:#12263A;"><strong>${esc(t.fromName)}</strong>${
+        `<tr><td style="padding:9px 0;border-bottom:1px solid #E4E6EA;font-size:14px;line-height:1.45;color:#101114;"><strong>${esc(t.fromName)}</strong>${
           t.actionRequired
-            ? ' <span style="color:#C6A15B;font-size:12px;font-weight:bold;">&#9679; needs action</span>'
+            ? ' <span style="color:#2563EB;font-size:12px;font-weight:bold;">&#9679; needs action</span>'
             : ''
-        }<br>${esc(t.subject)}<br><span style="color:#5C6B7A;font-size:13px;">${esc(t.tldr)}</span></td></tr>`,
+        }<br>${esc(t.subject)}<br><span style="color:#5A616C;font-size:13px;">${esc(t.tldr)}</span></td></tr>`,
     )
     .join('')
 
   const deadlineRows = c.deadlines
     .map(
       (d) =>
-        `<tr><td style="padding:5px 0;font-size:13px;line-height:1.45;color:#12263A;"><strong>${esc(d.date)}</strong> &mdash; ${esc(d.what)} <span style="color:#5C6B7A;">(${esc(d.subject)})</span></td></tr>`,
+        `<tr><td style="padding:5px 0;font-size:13px;line-height:1.45;color:#101114;"><strong>${esc(d.date)}</strong> &mdash; ${esc(d.what)} <span style="color:#5A616C;">(${esc(d.subject)})</span></td></tr>`,
     )
     .join('')
 
   const section = (title: string, inner: string): string =>
     inner
-      ? `<tr><td style="padding:16px 24px 4px 24px;font-size:12px;font-weight:bold;letter-spacing:1px;text-transform:uppercase;color:#5C6B7A;">${title}</td></tr><tr><td style="padding:0 24px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0">${inner}</table></td></tr>`
+      ? `<tr><td style="padding:16px 24px 4px 24px;font-size:12px;font-weight:bold;letter-spacing:1px;text-transform:uppercase;color:#5A616C;">${title}</td></tr><tr><td style="padding:0 24px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0">${inner}</table></td></tr>`
       : ''
 
-  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#F4F6F8;padding:24px 8px;"><tr><td align="center">
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#F4F5F7;padding:24px 8px;"><tr><td align="center">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%;background-color:#FFFFFF;font-family:Arial,Helvetica,sans-serif;">
-<tr><td style="background-color:#12263A;padding:20px 24px;">
+<tr><td style="background-color:#0B0B0D;padding:20px 24px;">
+<span style="color:#D9DCE3;font-size:11px;font-weight:bold;letter-spacing:3px;">ZORYXA&nbsp;MAIL</span><br>
 <span style="color:#FFFFFF;font-size:20px;font-weight:bold;">Morning Digest</span><br>
-<span style="color:#C6A15B;font-size:13px;">${esc(humanDate)}</span>
+<span style="color:#3B82F6;font-size:13px;">${esc(humanDate)}</span>
 </td></tr>
-<tr><td style="padding:18px 24px 6px 24px;font-size:15px;line-height:1.55;color:#12263A;">${esc(c.narrative)}</td></tr>
+<tr><td style="padding:18px 24px 6px 24px;font-size:15px;line-height:1.55;color:#101114;">${esc(c.narrative)}</td></tr>
 <tr><td style="padding:12px 24px 2px 24px;">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
-<td width="48%" style="background-color:#F4F6F8;padding:12px;text-align:center;">
-<div style="font-size:22px;font-weight:bold;color:#12263A;">${c.total}</div>
-<div style="font-size:12px;color:#5C6B7A;">emails in 24h</div>
+<td width="48%" style="background-color:#F4F5F7;padding:12px;text-align:center;">
+<div style="font-size:22px;font-weight:bold;color:#101114;">${c.total}</div>
+<div style="font-size:12px;color:#5A616C;">emails in 24h</div>
 </td>
 <td width="4%"></td>
-<td width="48%" style="background-color:#F4F6F8;padding:12px;text-align:center;">
-<div style="font-size:22px;font-weight:bold;color:#12263A;">${c.actionCount}</div>
-<div style="font-size:12px;color:#5C6B7A;">need action</div>
+<td width="48%" style="background-color:#F4F5F7;padding:12px;text-align:center;">
+<div style="font-size:22px;font-weight:bold;color:#2563EB;">${c.actionCount}</div>
+<div style="font-size:12px;color:#5A616C;">need action</div>
 </td>
 </tr></table>
 </td></tr>
@@ -75,7 +76,7 @@ ${section('By category', catRows)}
 ${section('Top priorities', topRows)}
 ${section('Deadlines', deadlineRows)}
 <tr><td align="center" style="padding:22px 24px 26px 24px;">
-<a href="${esc(siteUrl)}" style="display:inline-block;background-color:#12263A;color:#FFFFFF;text-decoration:none;font-size:14px;font-weight:bold;padding:11px 28px;border-radius:6px;">Open CEO Mail</a>
+<a href="${esc(siteUrl)}" style="display:inline-block;background-color:#2563EB;color:#FFFFFF;text-decoration:none;font-size:14px;font-weight:bold;padding:11px 28px;border-radius:6px;">Open Zoryxa Mail</a>
 </td></tr>
 </table>
 </td></tr></table>`
@@ -104,7 +105,7 @@ function buildText(c: DigestContent, humanDate: string, siteUrl: string): string
     lines.push('', 'Deadlines:')
     for (const d of c.deadlines) lines.push(`- ${d.date} — ${d.what} (${d.subject})`)
   }
-  lines.push('', `Open CEO Mail: ${siteUrl}`)
+  lines.push('', `Open Zoryxa Mail: ${siteUrl}`)
   return lines.join('\n')
 }
 

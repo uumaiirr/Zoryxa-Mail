@@ -470,5 +470,5 @@ export function installDemo(): void {
 
     return json({ error: `No demo handler for ${path}` }, 404)
   }
-  console.info('[demo] CEO Mail demo mode active — API calls are mocked')
+  console.info('[demo] Zoryxa Mail demo mode active — API calls are mocked')
 }

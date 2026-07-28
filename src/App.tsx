@@ -3,6 +3,7 @@ import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import type { AuthStatus } from '../shared/types'
 import { api } from './lib/api'
 import BottomNav from './components/BottomNav'
+import ZoryxaLogo from './components/ZoryxaLogo'
 import ComposeView from './views/ComposeView'
 import DigestView from './views/DigestView'
 import EmailDetailView from './views/EmailDetailView'
@@ -13,9 +14,10 @@ import SettingsView from './views/SettingsView'
 
 function Splash() {
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-navy text-white">
-      <div className="font-display text-3xl font-bold tracking-tight">CEO Mail</div>
-      <div className="mt-2 text-sm text-white/60">Preparing your inbox…</div>
+    <div className="min-h-screen flex flex-col items-center justify-center bg-[#0B0B0D] text-white">
+      <ZoryxaLogo size={64} variant="silver" />
+      <div className="font-display text-2xl font-extrabold tracking-[0.04em] mt-4">ZORYXA</div>
+      <div className="mt-2 text-sm text-white/50">Preparing your inbox…</div>
     </div>
   )
 }

@@ -570,7 +570,9 @@ export default function SettingsView(props: { auth: AuthStatus }) {
           </>
         )}
 
-        <p className="text-center text-xs text-muted mt-8">CEO Mail · private build</p>
+        <p className="text-center text-xs text-muted mt-8 font-display tracking-[0.18em]">
+          ZORYXA MAIL
+        </p>
       </div>
 
       {settings !== null && (dirty || saving || saved) && (

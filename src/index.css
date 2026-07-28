@@ -1,14 +1,47 @@
-/* Self-hosted fonts (offline-capable, precached by the service worker) */
+/* Self-hosted fonts (offline-capable, precached by the service worker).
+   Montserrat = brand display face (closest licensed match to the Zoryxa
+   specimen); Jost = geometric sans for body/UI. */
+@import '@fontsource/montserrat/500.css';
+@import '@fontsource/montserrat/700.css';
+@import '@fontsource/montserrat/800.css';
 @import '@fontsource/jost/400.css';
 @import '@fontsource/jost/500.css';
 @import '@fontsource/jost/600.css';
-@import '@fontsource/bodoni-moda/500.css';
-@import '@fontsource/bodoni-moda/600.css';
-@import '@fontsource/bodoni-moda/700.css';
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* ─── ZORYXA MAIL brand tokens (locked palette) ──────────────────────────────
+   Deep Matte Black #0B0B0D · Graphite #1D1F24 · Electric Blue #3B82F6 ·
+   Soft Silver #D9DCE3. Values are RGB triplets consumed by Tailwind via
+   rgb(var(--x) / <alpha-value>). Dark is the brand-primary mode. */
+:root {
+  --c-mist: 245 246 248; /* app background (light) */
+  --c-paper: 255 255 255; /* surfaces */
+  --c-ink: 16 17 20; /* primary text */
+  --c-muted: 90 97 108; /* secondary text */
+  --c-line: 228 230 234; /* hairlines */
+  --c-navy: 37 99 235; /* primary action (electric blue, AA with white) */
+  --c-navydeep: 11 11 13; /* deep matte black — scrims, dark text on chips */
+  --c-gold: 59 130 246; /* electric blue accents/badges */
+  --c-golddeep: 29 78 216; /* accent-toned text */
+  --c-goldsoft: 231 238 253; /* accent tint fills */
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --c-mist: 11 11 13; /* deep matte black */
+    --c-paper: 29 31 36; /* graphite */
+    --c-ink: 233 235 240; /* soft silver text */
+    --c-muted: 154 161 172;
+    --c-line: 44 47 55;
+    --c-navy: 37 99 235;
+    --c-navydeep: 11 11 13;
+    --c-gold: 59 130 246;
+    --c-golddeep: 138 180 255;
+    --c-goldsoft: 191 213 254; /* bright tint chips carry black text */
+  }
+}
 
 html {
   -webkit-text-size-adjust: 100%;
@@ -28,7 +61,7 @@ body {
   }
 }
 
-/* Respect phone notches / gesture bars (Huawei, iPhone) */
+/* Respect phone notches / gesture bars */
 .safe-top {
   padding-top: env(safe-area-inset-top);
 }
@@ -36,7 +69,7 @@ body {
   padding-bottom: env(safe-area-inset-bottom);
 }
 
-/* Executive card */
+/* Surface card */
 .card {
   @apply bg-paper rounded-2xl shadow-card border border-line;
 }
@@ -45,17 +78,17 @@ body {
 .btn-primary {
   @apply bg-navy text-white font-semibold rounded-xl px-4 py-3 transition duration-200
     active:scale-[0.98] active:opacity-90 disabled:opacity-40 disabled:active:scale-100
-    focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold focus-visible:ring-offset-2;
+    focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold focus-visible:ring-offset-2 focus-visible:ring-offset-mist;
 }
 .btn-gold {
   @apply bg-gold text-navydeep font-semibold rounded-xl px-4 py-3 transition duration-200
     active:scale-[0.98] active:opacity-90 disabled:opacity-40 disabled:active:scale-100
-    focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-navy focus-visible:ring-offset-2;
+    focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink focus-visible:ring-offset-2 focus-visible:ring-offset-mist;
 }
 .btn-ghost {
-  @apply bg-transparent text-navy font-semibold rounded-xl px-4 py-3 border border-line transition duration-200
-    active:scale-[0.98] active:bg-goldsoft disabled:opacity-40 disabled:active:scale-100
-    focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold focus-visible:ring-offset-2;
+  @apply bg-transparent text-ink font-semibold rounded-xl px-4 py-3 border border-line transition duration-200
+    active:scale-[0.98] active:bg-goldsoft/30 disabled:opacity-40 disabled:active:scale-100
+    focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold focus-visible:ring-offset-2 focus-visible:ring-offset-mist;
 }
 
 /* Entrance rhythm: apply .anim-in to a view's content wrapper; direct children
@@ -88,6 +121,6 @@ body {
   height: 6px;
 }
 ::-webkit-scrollbar-thumb {
-  background: #d5d0c4;
+  background: rgb(var(--c-line));
   border-radius: 3px;
 }
