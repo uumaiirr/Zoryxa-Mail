@@ -25,6 +25,8 @@ function rowToEmail(r: any): EmailSummary {
     id: r.id,
     accountId: r.account_id,
     folder: r.folder === 'sent' ? 'sent' : 'inbox',
+    priority: r.priority ?? 'normal',
+    analyzed: Boolean(r.analyzed),
     threadId: r.thread_id,
     fromName: r.from_name,
     fromEmail: r.from_email,
@@ -40,6 +42,7 @@ function rowToEmail(r: any): EmailSummary {
     tasks: (r.tasks ?? []) as string[],
     isRead: r.is_read,
     summarized: r.summarized,
+    suggestReply: Boolean(r.suggest_reply),
     hasDraft: Boolean(r.draft_body),
   }
 }
@@ -102,6 +105,10 @@ export async function listEmails(opts: {
   account?: string
   limit?: number
   before?: string
+  /** Only emails with an AI reply draft waiting (the Drafts view). */
+  drafts?: boolean
+  /** Filter to one priority bucket; 'spam' is hidden from the inbox otherwise. */
+  priority?: 'high' | 'normal' | 'low' | 'spam'
 }): Promise<EmailSummary[]> {
   let q = db()
     .from('emails')
@@ -110,6 +117,9 @@ export async function listEmails(opts: {
     .eq('folder', opts.folder ?? 'inbox')
     .order('received_at', { ascending: false })
     .limit(Math.min(opts.limit ?? 50, 100))
+  if (opts.drafts) q = q.not('draft_body', 'is', null)
+  if (opts.priority) q = q.eq('priority', opts.priority)
+  else if (!opts.drafts && (opts.folder ?? 'inbox') === 'inbox') q = q.neq('priority', 'spam')
   if (opts.category) q = q.eq('category', opts.category)
   if (opts.account) q = q.eq('account_id', opts.account)
   if (opts.before) q = q.lt('received_at', opts.before)
@@ -158,6 +168,82 @@ export async function countUnsummarized(): Promise<number> {
     .eq('folder', 'inbox')
   if (error) throw new Error(`Database error (countUnsummarized): ${error.message}`)
   return count ?? 0
+}
+
+/** Emails whose preview text hasn't been pulled yet (snippet is empty). */
+export async function listNeedingSnippet(limit: number): Promise<EmailSummary[]> {
+  const res = await db()
+    .from('emails')
+    .select('*')
+    .eq('snippet', '')
+    .eq('folder', 'inbox')
+    .order('received_at', { ascending: false })
+    .limit(limit)
+  return check(res, 'listNeedingSnippet').map(rowToEmail)
+}
+
+export async function saveSnippet(id: string, snippet: string): Promise<void> {
+  check(await db().from('emails').update({ snippet }).eq('id', id), 'saveSnippet')
+}
+
+export interface TriageInput {
+  category: string
+  priority: 'high' | 'normal' | 'low' | 'spam'
+  actionRequired: boolean
+  suggestReply: boolean
+}
+
+/** Cheap sort pass: category + priority, no body, no summary yet. */
+export async function saveTriage(id: string, t: TriageInput): Promise<void> {
+  check(
+    await db()
+      .from('emails')
+      .update({
+        category: t.category,
+        priority: t.priority,
+        action_required: t.actionRequired,
+        suggest_reply: t.suggestReply,
+        summarized: true, // triaged — the card can render normally now
+      })
+      .eq('id', id),
+    'saveTriage',
+  )
+}
+
+/** Deep analysis, produced when the CEO opens an email. */
+export async function saveAnalysis(
+  id: string,
+  a: {
+    tldr: string
+    participants: string[]
+    deadlines: Deadline[]
+    actionRequired: boolean
+    tasks: string[]
+    draft: { subject: string; body: string } | null
+  },
+): Promise<void> {
+  check(
+    await db()
+      .from('emails')
+      .update({
+        tldr: a.tldr,
+        participants: a.participants,
+        deadlines: a.deadlines,
+        action_required: a.actionRequired,
+        tasks: a.tasks,
+        analyzed: true,
+        summarized: true,
+        ...(a.draft
+          ? {
+              draft_subject: a.draft.subject,
+              draft_body: a.draft.body,
+              draft_generated_at: new Date().toISOString(),
+            }
+          : {}),
+      })
+      .eq('id', id),
+    'saveAnalysis',
+  )
 }
 
 export interface SummaryInput {
@@ -268,7 +354,25 @@ function defaultSettings(): AppSettings {
     timezone: 'Asia/Dubai',
     digestTo: '', // empty = the user's own sign-in email
     llmProvider: process.env.LLM_PROVIDER === 'groq' ? 'groq' : 'gemini',
+    historyDays: 90,
   }
+}
+
+/** Other messages in the same conversation — the reply trace. */
+export async function threadEmails(
+  userId: string,
+  threadId: string,
+  accountId: string,
+): Promise<EmailSummary[]> {
+  const res = await db()
+    .from('emails')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('account_id', accountId)
+    .eq('thread_id', threadId)
+    .order('received_at', { ascending: true })
+    .limit(30)
+  return check(res, 'threadEmails').map(rowToEmail)
 }
 
 export async function getSettings(userId: string): Promise<AppSettings> {

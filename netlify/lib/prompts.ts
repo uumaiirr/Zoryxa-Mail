@@ -103,6 +103,92 @@ ${e.body}`,
   .join('\n\n')}`
 }
 
+export interface TriageInput {
+  index: number
+  from: string
+  subject: string
+  date: string
+  preview: string
+}
+
+/**
+ * CHEAP pass over many emails at once — metadata + preview only, no bodies.
+ * Sorts the mailbox (category, priority, spam, reply-worthiness) without
+ * spending real AI budget. Deep analysis happens when an email is opened.
+ */
+export function triagePrompt(
+  emails: TriageInput[],
+  categories: Category[],
+  today: string,
+): string {
+  return `You are the executive mail triage for a company CEO. Today is ${today}.
+Sort the ${emails.length} email(s) below. Respond with JSON only.
+
+Respond with a JSON object: {"results": [one object per email, same order]}
+Each object has exactly:
+- "index": the email's index number exactly as given
+- "category": exactly one of the category keys below, or "new" with "newCategory"
+- "newCategory": ONLY when nothing fits — {"label": 1-3 word name, "description": one line}. You own this taxonomy; organize like an elite chief of staff.
+- "priority": "high" (needs the CEO personally and soon), "normal", "low" (newsletters, receipts, FYI), or "spam" (unsolicited marketing, phishing, junk)
+- "actionRequired": true if he must reply, decide, approve, pay, attend, or delegate
+- "suggestReply": true only if it genuinely deserves a written reply from him
+
+Category keys:
+${categories.map((c) => `- "${c.key}" (${c.label}): ${c.description}`).join('\n')}
+
+Judge from sender, subject, and preview. Be decisive. Respond with ONLY the JSON object.
+
+Emails:
+${emails
+  .map(
+    (e) => `--- index=${e.index} ---
+From: ${e.from}
+Date: ${e.date}
+Subject: ${e.subject}
+Preview: ${e.preview}`,
+  )
+  .join('\n\n')}`
+}
+
+/**
+ * DEEP pass for ONE email the CEO just opened: full summary plus, when it
+ * deserves one, a ready reply in his voice. Single call, single email.
+ */
+export function analyzePrompt(args: {
+  fromName: string
+  fromEmail: string
+  subject: string
+  date: string
+  body: string
+  today: string
+  wantsDraft: boolean
+  style: StyleProfile | null
+  examples: string[]
+}): string {
+  return `You are the executive email analyst for a company CEO. Today is ${args.today}.
+Analyze this ONE email and respond with JSON only.
+
+Respond with a JSON object with exactly these keys:
+- "tldr": one plain sentence, max 20 words, saying what it is about and what it wants
+- "participants": array of key people/organisations involved, max 6
+- "deadlines": array of {"date": "YYYY-MM-DD" when resolvable relative to today, else the literal phrase, "what": short description}; [] if none
+- "actionRequired": true only if the CEO must reply, decide, approve, pay, attend, or delegate
+- "tasks": array of short imperative phrases for the CEO; [] if none
+${
+  args.wantsDraft
+    ? `- "draft": {"subject": "Re: ...", "body": "..."} — a complete reply IN THE CEO'S VOICE, ready to send: greeting, message, sign-off. Plain text, no markdown, no placeholders. NEVER invent commitments, amounts, or dates not present in the email.`
+    : `- "draft": null`
+}
+
+${styleBlockFor(args.style, args.examples)}
+Email:
+From: ${args.fromName} <${args.fromEmail}>
+Date: ${args.date}
+Subject: ${args.subject}
+Body:
+${args.body}`
+}
+
 export function stylePrompt(samples: { to: string; subject: string; body: string }[]): string {
   return `You are a writing analyst. Below are ${samples.length} emails a CEO actually wrote and sent. Study how he writes and respond with JSON only.
 
@@ -124,6 +210,10 @@ Subject: ${s.subject}
 ${s.body}`,
   )
   .join('\n\n')}`
+}
+
+export function styleBlockFor(style: StyleProfile | null, examples: string[]): string {
+  return styleBlock(style, examples)
 }
 
 function styleBlock(style: StyleProfile | null, examples: string[]): string {

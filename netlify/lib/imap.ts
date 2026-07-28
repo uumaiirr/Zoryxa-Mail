@@ -119,10 +119,21 @@ function stripHtml(html: string): string {
     .trim()
 }
 
+export interface AttachmentMeta {
+  name: string
+  size: number
+  mimeType: string
+  ref: string
+}
+
 export interface RichBody {
   text: string
   html: string | null
+  attachments: AttachmentMeta[]
 }
+
+const INLINE_IMG_MAX = 300 * 1024
+const INLINE_IMG_COUNT = 6
 
 /** Removes cid-markers and angle-bracket URL wrappers from plain-text mail. */
 export function cleanPlainText(s: string): string {
@@ -136,10 +147,67 @@ export function cleanPlainText(s: string): string {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function parsedToRich(parsed: any): RichBody {
-  const html = typeof parsed.html === 'string' && parsed.html ? parsed.html : null
+  let html = typeof parsed.html === 'string' && parsed.html ? parsed.html : null
   const text =
     cleanPlainText((parsed.text || '').trim()) || (html ? stripHtml(html) : '')
-  return { text: text.slice(0, 20000), html }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const all: any[] = Array.isArray(parsed.attachments) ? parsed.attachments : []
+  const attachments: AttachmentMeta[] = []
+  let embedded = 0
+  all.forEach((a, i) => {
+    const mime = String(a.contentType ?? 'application/octet-stream')
+    const size = Number(a.size ?? a.content?.length ?? 0)
+    // Signature/logo images referenced by cid: embed them into the HTML so
+    // the email renders exactly as designed.
+    if (a.cid && /^image\//.test(mime) && html && size <= INLINE_IMG_MAX && embedded < INLINE_IMG_COUNT && a.content) {
+      const re = new RegExp(`cid:${String(a.cid).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'gi')
+      html = html.replace(re, `data:${mime};base64,${a.content.toString('base64')}`)
+      embedded++
+      return
+    }
+    attachments.push({
+      name: String(a.filename ?? `file-${i + 1}`),
+      size,
+      mimeType: mime,
+      ref: String(i),
+    })
+  })
+
+  return { text: text.slice(0, 20000), html, attachments: attachments.slice(0, 20) }
+}
+
+/** Fetches one attachment's bytes by its index ref. */
+export async function fetchAttachment(
+  acc: Account,
+  providerId: string,
+  ref: string,
+): Promise<{ name: string; mimeType: string; content: Buffer }> {
+  const isSent = providerId.startsWith('s:')
+  const uid = isSent ? providerId.slice(2) : providerId
+  const client = clientFor(acc)
+  await client.connect()
+  try {
+    const path = isSent ? await sentMailboxPath(client) : 'INBOX'
+    if (!path) throw new HttpError(404, 'Folder not found on the mail server')
+    const lock = await client.getMailboxLock(path)
+    try {
+      const msg = await client.fetchOne(uid, { source: true }, { uid: true })
+      if (!msg || !msg.source) throw new HttpError(404, 'Email not found on the mail server')
+      const parsed = await simpleParser(msg.source)
+      const a = (Array.isArray(parsed.attachments) ? parsed.attachments : [])[Number(ref)]
+      if (!a || !a.content) throw new HttpError(404, 'Attachment not found')
+      return {
+        name: String(a.filename ?? 'attachment'),
+        mimeType: String(a.contentType ?? 'application/octet-stream'),
+        content: a.content,
+      }
+    } finally {
+      lock.release()
+    }
+  } finally {
+    await client.logout().catch(() => {})
+  }
 }
 
 /** Downloads and parses one message body (never persisted). 's:'-prefixed

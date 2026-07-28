@@ -4,6 +4,7 @@ import type {
   ChatMessage,
   DigestRecord,
   DraftResult,
+  EmailAnalysis,
   EmailDetail,
   EmailSummary,
   ImapAccountInput,
@@ -90,12 +91,16 @@ export const api = {
   emails: (
     params: {
       folder?: 'inbox' | 'sent'
+      drafts?: boolean
       category?: string
       account?: string
       limit?: number
       before?: string
     } = {},
-  ) => j<EmailSummary[]>(`/api/emails${qs(params)}`),
+  ) =>
+    j<EmailSummary[]>(
+      `/api/emails${qs({ ...params, drafts: params.drafts ? '1' : undefined })}`,
+    ),
 
   uploadUrl: (file: { name: string; mimeType: string; size: number }) =>
     j<{ path: string; signedUrl: string; token: string }>('/api/upload-url', {
@@ -104,6 +109,16 @@ export const api = {
     }),
 
   email: (id: string) => j<EmailDetail>(`/api/emails/${encodeURIComponent(id)}`),
+
+  /** Deep AI for one email — runs when it's opened, cached afterwards. */
+  analyze: (id: string, force = false) =>
+    j<EmailAnalysis>('/api/emails/analyze', {
+      method: 'POST',
+      body: JSON.stringify({ id, force }),
+    }),
+
+  attachmentUrl: (id: string, ref: string) =>
+    `/api/attachment?id=${encodeURIComponent(id)}&ref=${encodeURIComponent(ref)}`,
 
   sync: (force = false) =>
     j<SyncResult>('/api/sync', { method: 'POST', body: JSON.stringify({ force }) }),

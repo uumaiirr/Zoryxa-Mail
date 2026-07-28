@@ -65,6 +65,9 @@ function sanitize(raw: Partial<AppSettings>): AppSettings {
     timezone,
     digestTo,
     llmProvider: raw.llmProvider === 'groq' ? 'groq' : 'gemini',
+    historyDays: [1, 7, 30, 90, 3650].includes(Number(raw.historyDays))
+      ? Number(raw.historyDays)
+      : 90,
   }
 }
 

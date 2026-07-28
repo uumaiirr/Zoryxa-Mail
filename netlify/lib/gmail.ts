@@ -251,15 +251,24 @@ function cleanPlainText(s: string): string {
     .trim()
 }
 
+export interface GmailAttachmentMeta {
+  name: string
+  size: number
+  mimeType: string
+  ref: string
+}
+
 /** Fetches the message body live from Gmail. Bodies are never persisted. */
 export async function getBodyRich(
   acc: Account,
   id: string,
-): Promise<{ text: string; html: string | null }> {
+): Promise<{ text: string; html: string | null; attachments: GmailAttachmentMeta[] }> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const data = (await gapi(acc, `/messages/${id}?format=full`)) as any
   let text = ''
   let html = ''
+  const attachments: GmailAttachmentMeta[] = []
+  const inlineImgs: { cid: string; ref: string; mime: string; size: number }[] = []
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const walk = (part: any): void => {
     if (!part) return
@@ -267,12 +276,88 @@ export async function getBodyRich(
     const body = part.body?.data
     if (body && mime === 'text/plain') text += decodeB64Url(body)
     else if (body && mime === 'text/html') html += decodeB64Url(body)
+    if (part.filename && part.body?.attachmentId) {
+      const cidRaw = (part.headers ?? []).find(
+        (h: { name: string; value: string }) => h.name.toLowerCase() === 'content-id',
+      )?.value as string | undefined
+      const cid = cidRaw ? cidRaw.replace(/^<|>$/g, '') : null
+      const size = Number(part.body.size ?? 0)
+      if (cid && /^image\//.test(mime) && size > 0 && size <= 300 * 1024) {
+        inlineImgs.push({ cid, ref: part.body.attachmentId, mime, size })
+      } else {
+        attachments.push({
+          name: String(part.filename),
+          size,
+          mimeType: mime || 'application/octet-stream',
+          ref: String(part.body.attachmentId),
+        })
+      }
+    }
     for (const p of part.parts ?? []) walk(p)
   }
   walk(data.payload)
+
+  // Embed signature/logo images so the email renders exactly as designed —
+  // fetched in PARALLEL so opening an email stays fast.
+  const wanted = inlineImgs.filter((i) => html.includes(`cid:${i.cid}`)).slice(0, 6)
+  if (wanted.length > 0) {
+    const fetched = await Promise.all(
+      wanted.map(async (img) => {
+        try {
+          const att = (await gapi(acc, `/messages/${id}/attachments/${img.ref}`)) as {
+            data?: string
+          }
+          return att.data ? { img, data: att.data } : null
+        } catch (e) {
+          console.error('inline image fetch failed', img.cid, e)
+          return null
+        }
+      }),
+    )
+    for (const f of fetched) {
+      if (!f) continue
+      const b64 = f.data.replace(/-/g, '+').replace(/_/g, '/')
+      html = html.split(`cid:${f.img.cid}`).join(`data:${f.img.mime};base64,${b64}`)
+    }
+  }
+
   const cleanText =
     cleanPlainText(text.trim()) || stripHtml(html) || decodeEntities(data.snippet ?? '')
-  return { text: cleanText.slice(0, 20000), html: html || null }
+  return { text: cleanText.slice(0, 20000), html: html || null, attachments: attachments.slice(0, 20) }
+}
+
+/** Fetches one attachment's bytes by its Gmail attachmentId ref. */
+export async function getAttachment(
+  acc: Account,
+  messageId: string,
+  ref: string,
+): Promise<{ name: string; mimeType: string; content: Buffer }> {
+  // Read the part list from metadata only — never re-download inline images.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const data = (await gapi(acc, `/messages/${messageId}?format=full`)) as any
+  let meta: { name: string; mimeType: string } | null = null
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const walk = (part: any): void => {
+    if (!part || meta) return
+    if (part.filename && part.body?.attachmentId === ref) {
+      meta = {
+        name: String(part.filename),
+        mimeType: String(part.mimeType ?? 'application/octet-stream'),
+      }
+      return
+    }
+    for (const p of part.parts ?? []) walk(p)
+  }
+  walk(data.payload)
+
+  const att = (await gapi(acc, `/messages/${messageId}/attachments/${ref}`)) as { data?: string }
+  if (!att.data) throw new HttpError(404, 'Attachment not found')
+  const m = meta as { name: string; mimeType: string } | null
+  return {
+    name: m?.name ?? 'attachment',
+    mimeType: m?.mimeType ?? 'application/octet-stream',
+    content: Buffer.from(att.data.replace(/-/g, '+').replace(/_/g, '/'), 'base64'),
+  }
 }
 
 export async function getBody(acc: Account, id: string): Promise<string> {

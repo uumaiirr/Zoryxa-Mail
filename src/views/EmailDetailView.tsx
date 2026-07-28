@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import type { EmailDetail } from '../../shared/types'
 import { api } from '../lib/api'
 import TopBar from '../components/TopBar'
@@ -87,26 +87,82 @@ function SpinnerIcon() {
  *  sandboxed frame (scripts blocked) that sizes itself to the content. */
 function HtmlBody({ html }: { html: string }) {
   const ref = useRef<HTMLIFrameElement | null>(null)
-  const [height, setHeight] = useState(360)
-  const doc = `<!doctype html><html><head><meta charset="utf-8"><base target="_blank"><style>body{margin:12px;font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;font-size:14px;line-height:1.55;color:#16181d;background:#fff;word-break:break-word}img{max-width:100%!important;height:auto!important}table{max-width:100%!important}a{color:#2563EB}</style></head><body>${html}</body></html>`
+  const [height, setHeight] = useState(200)
+  // No inner scrollbar: the frame grows to fit and the PAGE scrolls, exactly
+  // like Gmail/Spark/Outlook. Height is re-measured as images finish loading.
+  const doc = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><base target="_blank"><style>
+html,body{margin:0;padding:0;overflow:hidden}
+body{font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;font-size:15px;line-height:1.55;color:#16181d;background:#fff;word-break:break-word;padding:2px 2px 6px}
+img{max-width:100%!important;height:auto!important}
+table{max-width:100%!important}
+blockquote{margin:8px 0;padding-left:12px;border-left:3px solid #e4e6ea;color:#5a616c}
+a{color:#2563EB}
+</style></head><body>${html}</body></html>`
+
+  useEffect(() => {
+    const measure = () => {
+      try {
+        const d = ref.current?.contentDocument
+        if (!d?.body) return
+        const h = Math.max(d.body.scrollHeight, d.documentElement.scrollHeight)
+        if (h > 0) setHeight(Math.min(Math.max(h + 8, 120), 20000))
+      } catch {
+        /* keep current height */
+      }
+    }
+    const t1 = window.setTimeout(measure, 120)
+    const t2 = window.setTimeout(measure, 700)
+    const t3 = window.setTimeout(measure, 2000)
+    window.addEventListener('resize', measure)
+    return () => {
+      window.clearTimeout(t1)
+      window.clearTimeout(t2)
+      window.clearTimeout(t3)
+      window.removeEventListener('resize', measure)
+    }
+  }, [html])
+
   return (
     <iframe
       ref={ref}
       title="Email content"
       sandbox="allow-same-origin allow-popups"
       srcDoc={doc}
-      className="w-full rounded-xl bg-white border border-line"
+      scrolling="no"
+      className="w-full block border-0 bg-white rounded-lg"
       style={{ height }}
       onLoad={() => {
         try {
           const d = ref.current?.contentDocument
-          if (d) setHeight(Math.min(Math.max(d.body.scrollHeight + 28, 160), 5000))
+          if (d?.body) {
+            setHeight(Math.min(Math.max(d.body.scrollHeight + 8, 120), 20000))
+            for (const img of Array.from(d.images)) {
+              img.addEventListener('load', () => {
+                const h = d.body.scrollHeight
+                if (h > 0) setHeight(Math.min(Math.max(h + 8, 120), 20000))
+              })
+            }
+          }
         } catch {
           /* keep default height */
         }
       }}
     />
   )
+}
+
+function formatBytes(n: number): string {
+  if (!n) return ''
+  if (n < 1024) return `${n} B`
+  if (n < 1024 * 1024) return `${Math.round(n / 1024)} KB`
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function fileIconFor(mime: string) {
+  if (/^image\//.test(mime)) return 'image'
+  if (mime === 'application/pdf') return 'pdf'
+  if (/sheet|excel|csv/.test(mime)) return 'sheet'
+  return 'file'
 }
 
 function DetailSkeleton() {
@@ -153,6 +209,8 @@ export default function EmailDetailView() {
   const [bodyExpanded, setBodyExpanded] = useState(false)
   const [reloadKey, setReloadKey] = useState(0)
   const [wasAutoDrafted, setWasAutoDrafted] = useState(false)
+  const [analyzing, setAnalyzing] = useState(false)
+  const [traceOpen, setTraceOpen] = useState(false)
 
   useEffect(() => {
     if (!id) {
@@ -177,6 +235,41 @@ export default function EmailDetailView() {
             setWasAutoDrafted(true)
             return { to: d.fromEmail, cc: '', subject: stored.subject, body: stored.body }
           })
+        }
+        // Deep AI runs the moment the email is opened — the list itself is
+        // never mass-summarized. Cached after the first time.
+        if (!d.analyzed) {
+          setAnalyzing(true)
+          api
+            .analyze(id)
+            .then((a) => {
+              if (cancelled) return
+              setDetail((cur) =>
+                cur && cur.id === d.id
+                  ? {
+                      ...cur,
+                      analyzed: true,
+                      tldr: a.tldr,
+                      participants: a.participants,
+                      deadlines: a.deadlines,
+                      actionRequired: a.actionRequired,
+                      tasks: a.tasks,
+                    }
+                  : cur,
+              )
+              if (a.draft) {
+                const made = a.draft
+                setDraft((existing) => {
+                  if (existing) return existing
+                  setWasAutoDrafted(true)
+                  return { to: d.fromEmail, cc: '', subject: made.subject, body: made.body }
+                })
+              }
+            })
+            .catch(() => {})
+            .finally(() => {
+              if (!cancelled) setAnalyzing(false)
+            })
         }
       })
       .catch((e: unknown) => {
@@ -285,11 +378,16 @@ export default function EmailDetailView() {
                 <SparkleIcon />
                 <span className="text-xs font-semibold uppercase tracking-wide text-muted">Summary</span>
               </div>
-              {detail.summarized && detail.tldr ? (
+              {detail.tldr ? (
                 <p className="mt-2 text-[15px] leading-relaxed">{detail.tldr}</p>
+              ) : analyzing ? (
+                <div className="mt-2.5 space-y-2 animate-pulse" aria-label="Reading this email">
+                  <div className="h-3.5 bg-line rounded w-full" />
+                  <div className="h-3.5 bg-line rounded w-4/5" />
+                </div>
               ) : (
                 <p className="mt-2 text-[15px] leading-relaxed italic text-muted">
-                  Still summarizing — check back in a minute.
+                  Open again in a moment — the assistant is catching up.
                 </p>
               )}
 
@@ -364,11 +462,105 @@ export default function EmailDetailView() {
               </svg>
             </button>
 
+            {/* Conversation trace — the earlier messages in this thread */}
+            {detail.thread.length > 0 && (
+              <div className="card mt-3 overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => setTraceOpen((v) => !v)}
+                  className="w-full flex items-center gap-2 px-4 py-3 text-left min-h-[48px]"
+                  aria-expanded={traceOpen}
+                >
+                  <svg viewBox="0 0 24 24" className="w-4 h-4 text-muted shrink-0" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                  </svg>
+                  <span className="text-sm font-semibold flex-1">
+                    {traceOpen ? 'Hide history' : `Show history (${detail.thread.length})`}
+                  </span>
+                  <svg viewBox="0 0 24 24" className={'w-4 h-4 text-muted transition ' + (traceOpen ? 'rotate-90' : '')} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" aria-hidden="true">
+                    <path d="m9 6 6 6-6 6" />
+                  </svg>
+                </button>
+                {traceOpen && (
+                  <div className="border-t border-line divide-y divide-line">
+                    {detail.thread.map((t) => (
+                      <Link key={t.id} to={'/email/' + t.id} className="block px-4 py-3 active:bg-mist transition">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-semibold truncate flex-1">
+                            {t.folder === 'sent' ? 'You' : t.fromName}
+                          </span>
+                          <span className="text-xs text-muted shrink-0">
+                            {new Date(t.receivedAt).toLocaleDateString('en-GB', {
+                              day: 'numeric',
+                              month: 'short',
+                            })}
+                          </span>
+                        </div>
+                        <p className="text-xs text-muted line-clamp-2 mt-0.5">{t.snippet}</p>
+                      </Link>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Attachments */}
+            {detail.attachments.length > 0 && (
+              <div className="card p-4 mt-3">
+                <div className="text-xs font-semibold uppercase tracking-wide text-muted mb-2.5">
+                  {detail.attachments.length} attachment
+                  {detail.attachments.length === 1 ? '' : 's'}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {detail.attachments.map((a) => {
+                    const kind = fileIconFor(a.mimeType)
+                    return (
+                      <a
+                        key={a.ref}
+                        href={api.attachmentUrl(detail.id, a.ref)}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-2.5 rounded-xl border border-line bg-mist px-3 py-2.5 max-w-full active:scale-[0.98] transition"
+                      >
+                        <span className="w-8 h-8 rounded-lg bg-goldsoft text-navydeep flex items-center justify-center shrink-0">
+                          <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                            {kind === 'image' ? (
+                              <>
+                                <rect x="3" y="3" width="18" height="18" rx="2" />
+                                <circle cx="8.5" cy="8.5" r="1.5" />
+                                <path d="m21 15-5-5L5 21" />
+                              </>
+                            ) : kind === 'sheet' ? (
+                              <>
+                                <rect x="3" y="3" width="18" height="18" rx="2" />
+                                <path d="M3 9h18M3 15h18M9 3v18M15 3v18" />
+                              </>
+                            ) : (
+                              <>
+                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                                <path d="M14 2v6h6" />
+                              </>
+                            )}
+                          </svg>
+                        </span>
+                        <span className="min-w-0">
+                          <span className="block text-sm font-medium truncate max-w-[190px]">
+                            {a.name}
+                          </span>
+                          <span className="block text-xs text-muted">{formatBytes(a.size)}</span>
+                        </span>
+                      </a>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
             {/* Full email — original HTML when the message has it */}
             <div className="card p-4 mt-3">
               <div className="text-xs font-semibold uppercase tracking-wide text-muted">Full email</div>
               {detail.bodyHtml ? (
-                <div className="mt-2 -mx-1">
+                <div className="mt-2">
                   <HtmlBody html={detail.bodyHtml} />
                 </div>
               ) : (

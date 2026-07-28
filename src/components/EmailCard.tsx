@@ -24,6 +24,17 @@ function initialsOf(name: string): string {
   return (first + last).toUpperCase() || '?'
 }
 
+// Spark-style vivid avatars: a stable, saturated color per sender.
+const AVATAR_COLORS = [
+  '#E0533D', '#2E7D5B', '#3B62C8', '#8E44AD', '#C0392B',
+  '#16808C', '#D97706', '#BE3B7A', '#4E68E8', '#0E8A6D',
+]
+function avatarColor(s: string): string {
+  let h = 0
+  for (const c of s) h = (h * 31 + c.charCodeAt(0)) >>> 0
+  return AVATAR_COLORS[h % AVATAR_COLORS.length]
+}
+
 export default function EmailCard(props: {
   email: EmailSummary
   category?: Category
@@ -34,6 +45,7 @@ export default function EmailCard(props: {
   const displayName = isSent ? `To: ${email.toEmails[0] ?? email.subject}` : email.fromName
   const hasChips =
     category !== undefined ||
+    email.priority === 'high' ||
     email.actionRequired ||
     email.deadlines.length > 0 ||
     email.hasDraft ||
@@ -54,15 +66,8 @@ export default function EmailCard(props: {
       <div className="flex items-start gap-3">
         <div className="relative shrink-0" aria-hidden="true">
           <div
-            className={
-              'w-10 h-10 rounded-full flex items-center justify-center font-display text-[13px] font-bold' +
-              (category === undefined ? ' bg-goldsoft text-navydeep' : '')
-            }
-            style={
-              category !== undefined
-                ? { backgroundColor: category.color + '26', color: category.color }
-                : undefined
-            }
+            className="w-10 h-10 rounded-full flex items-center justify-center font-display text-[13px] font-bold text-white"
+            style={{ backgroundColor: avatarColor(displayName) }}
           >
             {initialsOf(isSent ? (email.toEmails[0] ?? '?') : email.fromName)}
           </div>
@@ -83,14 +88,10 @@ export default function EmailCard(props: {
             {email.subject}
           </p>
 
-          {email.summarized ? (
-            <p className="text-sm text-muted line-clamp-2 mt-1">{email.tldr || email.snippet}</p>
-          ) : (
-            <div className="mt-1">
-              <p className="text-sm italic text-muted/70 line-clamp-2">{email.snippet}</p>
-              <p className="text-xs text-muted/70 animate-pulse mt-0.5">Summarizing…</p>
-            </div>
-          )}
+          {/* The list shows the real preview — deep AI runs only when opened. */}
+          <p className="text-sm text-muted line-clamp-2 mt-1">
+            {email.tldr || email.snippet || ' '}
+          </p>
 
           {hasChips && (
             <div className="flex gap-1.5 flex-wrap mt-2">
@@ -105,6 +106,12 @@ export default function EmailCard(props: {
                   style={{ backgroundColor: category.color + '1F', color: category.color }}
                 >
                   {category.label}
+                </span>
+              )}
+              {email.priority === 'high' && (
+                <span className="inline-flex items-center gap-1 bg-red-100 text-red-700 text-xs font-semibold rounded-full px-2 py-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
+                  Priority
                 </span>
               )}
               {email.actionRequired && (

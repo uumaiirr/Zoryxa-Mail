@@ -18,10 +18,12 @@ export default handle(async (req, context) => {
   // Bodies are never persisted — always fetched live from the mailbox.
   let body: string
   let bodyHtml: string | null = null
+  let attachments: EmailDetail['attachments'] = []
   try {
     const rich = await mailbox.getBodyRich(acc, store.providerIdOf(summary))
     body = rich.text || summary.snippet
-    bodyHtml = rich.html ? rich.html.slice(0, 400_000) : null
+    bodyHtml = rich.html ? rich.html.slice(0, 900_000) : null
+    attachments = rich.attachments
   } catch {
     body = summary.snippet
   }
@@ -39,7 +41,32 @@ export default handle(async (req, context) => {
     console.error('getDraft failed', id, e)
   }
 
-  const detail: EmailDetail = { ...summary, body, bodyHtml, isRead: true, draft }
+  // The conversation trace — earlier messages in the same thread.
+  let thread: EmailDetail['thread'] = []
+  try {
+    thread = (await store.threadEmails(userId, summary.threadId, summary.accountId))
+      .filter((t) => t.id !== summary.id)
+      .map((t) => ({
+        id: t.id,
+        fromName: t.fromName,
+        subject: t.subject,
+        snippet: t.snippet,
+        receivedAt: t.receivedAt,
+        folder: t.folder,
+      }))
+  } catch (e) {
+    console.error('thread lookup failed', id, e)
+  }
+
+  const detail: EmailDetail = {
+    ...summary,
+    body,
+    bodyHtml,
+    attachments,
+    thread,
+    isRead: true,
+    draft,
+  }
   return json(detail)
 })
 

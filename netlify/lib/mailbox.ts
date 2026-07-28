@@ -104,14 +104,32 @@ export async function getBody(acc: Account, providerId: string): Promise<string>
   return acc.kind === 'imap' ? imap.fetchBody(acc, providerId) : gmail.getBody(acc, providerId)
 }
 
-/** Live body fetch with the original HTML preserved for rich rendering. */
+export interface AttachmentMeta {
+  name: string
+  size: number
+  mimeType: string
+  ref: string
+}
+
+/** Live body fetch with original HTML (inline images embedded) + attachments. */
 export async function getBodyRich(
   acc: Account,
   providerId: string,
-): Promise<{ text: string; html: string | null }> {
+): Promise<{ text: string; html: string | null; attachments: AttachmentMeta[] }> {
   return acc.kind === 'imap'
     ? imap.fetchBodyRich(acc, providerId)
     : gmail.getBodyRich(acc, providerId)
+}
+
+/** Downloads one attachment's bytes. */
+export async function getAttachment(
+  acc: Account,
+  providerId: string,
+  ref: string,
+): Promise<{ name: string; mimeType: string; content: Buffer }> {
+  return acc.kind === 'imap'
+    ? imap.fetchAttachment(acc, providerId, ref)
+    : gmail.getAttachment(acc, providerId, ref)
 }
 
 /**

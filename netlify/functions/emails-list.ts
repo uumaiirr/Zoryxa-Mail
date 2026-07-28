@@ -19,6 +19,7 @@ export default handle(async (req) => {
   const emails = await store.listEmails({
     userId,
     folder,
+    drafts: params.get('drafts') === '1',
     category: category || undefined,
     account: account || undefined,
     limit,

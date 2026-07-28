@@ -248,7 +248,7 @@ export default handle(async (req) => {
   const forced = body.force === true || sessionUser !== null
 
   try {
-    await runSync({})
+    await runSync({ light: true })
   } catch (e) {
     console.error('sync during digest failed', e)
   }

@@ -573,6 +573,28 @@ export default function SettingsView(props: { auth: AuthStatus }) {
 
         <AccountsSection />
 
+        <Section title="Appearance">
+          <label className="block text-xs font-medium text-muted mb-1.5" htmlFor="theme">
+            Theme
+          </label>
+          <select
+            id="theme"
+            className={inputClass}
+            defaultValue={localStorage.getItem('zx-theme') ?? 'light'}
+            onChange={(e) => {
+              const v = e.target.value
+              localStorage.setItem('zx-theme', v)
+              if (v === 'auto') delete document.documentElement.dataset.theme
+              else document.documentElement.dataset.theme = v === 'dark' ? 'dark' : 'light'
+            }}
+          >
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+            <option value="auto">Match device</option>
+          </select>
+          <p className="text-xs text-muted mt-2">Light is the signature Zoryxa look.</p>
+        </Section>
+
         {settings === null ? (
           <div className="animate-pulse mt-5 space-y-3">
             <div className="h-40 bg-line rounded-2xl" />
@@ -597,6 +619,26 @@ export default function SettingsView(props: { auth: AuthStatus }) {
                   </option>
                 ))}
               </select>
+
+              <label className="block text-xs font-medium text-muted mb-1.5 mt-3" htmlFor="history">
+                Load mail from
+              </label>
+              <select
+                id="history"
+                className={inputClass}
+                value={String(settings.historyDays)}
+                onChange={(e) => patch({ historyDays: Number(e.target.value) })}
+              >
+                <option value="1">The last 24 hours</option>
+                <option value="7">The last week</option>
+                <option value="30">The last month</option>
+                <option value="90">The last 3 months</option>
+                <option value="3650">Everything (full history)</option>
+              </select>
+              <p className="text-xs text-muted mt-1.5">
+                How far back a newly connected mailbox is loaded. Older mail keeps arriving
+                quietly in the background.
+              </p>
 
               <label className="block text-xs font-medium text-muted mb-1.5 mt-3" htmlFor="timezone">
                 Timezone

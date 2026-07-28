@@ -32,6 +32,7 @@ const settings: AppSettings = {
   timezone: 'Asia/Dubai',
   digestTo: 'walid@dubaiconsultancy.ae',
   llmProvider: 'gemini',
+  historyDays: 90,
 }
 
 const accounts: MailAccount[] = [
@@ -55,7 +56,11 @@ const accounts: MailAccount[] = [
 const PERSONAL_IDS = new Set(['d7', 'd10'])
 const accountOf = (id: string) => (PERSONAL_IDS.has(id) ? 'acc-personal' : 'acc-office')
 
-interface DemoEmail extends Omit<EmailSummary, 'hasDraft' | 'accountId' | 'folder'> {
+interface DemoEmail
+  extends Omit<
+    EmailSummary,
+    'hasDraft' | 'accountId' | 'folder' | 'priority' | 'analyzed' | 'suggestReply'
+  > {
   body: string
 }
 
@@ -433,15 +438,20 @@ export function installDemo(): void {
 
     if (path === '/api/emails') {
       if (params.get('folder') === 'sent') return json([])
+      const onlyDrafts = params.get('drafts') === '1'
       const cat = params.get('category')
       const account = params.get('account')
       const list: EmailSummary[] = emails
+        .filter((e) => !onlyDrafts || Boolean(drafts[e.id]))
         .filter((e) => !cat || e.category === cat)
         .filter((e) => !account || accountOf(e.id) === account)
         .map(({ body: _body, ...rest }) => ({
           ...rest,
           accountId: accountOf(rest.id),
           folder: 'inbox' as const,
+          priority: (rest.actionRequired ? 'high' : 'normal') as EmailSummary['priority'],
+          analyzed: true,
+          suggestReply: Boolean(drafts[rest.id]),
           hasDraft: Boolean(drafts[rest.id]),
         }))
       return json(list)
@@ -456,7 +466,12 @@ export function installDemo(): void {
         ...e,
         accountId: accountOf(e.id),
         folder: 'inbox',
+        priority: e.actionRequired ? 'high' : 'normal',
+        analyzed: true,
+        suggestReply: Boolean(drafts[e.id]),
         bodyHtml: null,
+        attachments: [],
+        thread: [],
         isRead: true,
         hasDraft: Boolean(drafts[e.id]),
         draft: drafts[e.id] ?? null,

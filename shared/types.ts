@@ -37,10 +37,14 @@ export interface ImapAccountInput {
 
 export type MailFolder = 'inbox' | 'sent'
 
+export type MailPriority = 'high' | 'normal' | 'low' | 'spam'
+
 export interface EmailSummary {
   id: string // opaque: `${accountId}~${providerId}`
   accountId: string
   folder: MailFolder
+  priority: MailPriority
+  analyzed: boolean // deep AI summary exists (generated when opened)
   threadId: string
   fromName: string
   fromEmail: string
@@ -55,14 +59,43 @@ export interface EmailSummary {
   actionRequired: boolean
   tasks: string[]
   isRead: boolean
-  summarized: boolean
-  hasDraft: boolean // an AI reply draft is waiting (auto-drafted for reply-worthy mail)
+  summarized: boolean // triaged: sorted into a category and priority
+  suggestReply: boolean // the AI judged this worth a written reply
+  hasDraft: boolean // an AI reply draft is waiting
+}
+
+export interface EmailAttachment {
+  name: string
+  size: number
+  mimeType: string
+  ref: string
+}
+
+export interface ThreadMessage {
+  id: string
+  fromName: string
+  subject: string
+  snippet: string
+  receivedAt: string
+  folder: MailFolder
 }
 
 export interface EmailDetail extends EmailSummary {
   body: string // fetched live from the mail server, never persisted
   bodyHtml: string | null // original HTML for rich rendering, when the email has it
+  attachments: EmailAttachment[]
+  thread: ThreadMessage[] // the conversation trace, oldest first
   draft: { subject: string; body: string } | null // pre-written reply, if any
+}
+
+export interface EmailAnalysis {
+  tldr: string
+  participants: string[]
+  deadlines: Deadline[]
+  actionRequired: boolean
+  tasks: string[]
+  draft: { subject: string; body: string } | null
+  cached?: boolean
 }
 
 export interface DraftResult {
@@ -103,6 +136,8 @@ export interface AppSettings {
   timezone: string // IANA, e.g. 'Asia/Dubai'
   digestTo: string // where the morning digest email is sent (the owner)
   llmProvider: 'gemini' | 'groq'
+  /** How far back to load mail on a new account: 1, 7, 30, 90 or 3650 days. */
+  historyDays: number
 }
 
 export interface AuthStatus {

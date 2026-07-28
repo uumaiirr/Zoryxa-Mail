@@ -43,6 +43,33 @@
   }
 }
 
+/* Explicit user choice (Settings → Appearance) beats the OS preference.
+   The app defaults to Light — the Spark-style airy look. */
+:root[data-theme='light'] {
+  --c-mist: 246 247 249;
+  --c-paper: 255 255 255;
+  --c-ink: 16 17 20;
+  --c-muted: 90 97 108;
+  --c-line: 228 230 234;
+  --c-navy: 37 99 235;
+  --c-navydeep: 11 11 13;
+  --c-gold: 59 130 246;
+  --c-golddeep: 29 78 216;
+  --c-goldsoft: 231 238 253;
+}
+:root[data-theme='dark'] {
+  --c-mist: 11 11 13;
+  --c-paper: 29 31 36;
+  --c-ink: 233 235 240;
+  --c-muted: 154 161 172;
+  --c-line: 44 47 55;
+  --c-navy: 37 99 235;
+  --c-navydeep: 11 11 13;
+  --c-gold: 59 130 246;
+  --c-golddeep: 138 180 255;
+  --c-goldsoft: 191 213 254;
+}
+
 html {
   -webkit-text-size-adjust: 100%;
 }
@@ -173,6 +200,19 @@ body {
       0 2px 4px rgba(0, 0, 0, 0.12),
       0 12px 32px rgba(0, 0, 0, 0.18);
   }
+}
+
+/* Apple-Mail-style priority banner: soft pastel gradient in light, deep in dark. */
+.priority-card {
+  background: linear-gradient(120deg, #fdecec, #e9f0fe 55%, #f4ecfe);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .priority-card {
+    background: linear-gradient(120deg, #221a24, #171d2e 55%, #1a1626);
+  }
+}
+:root[data-theme='dark'] .priority-card {
+  background: linear-gradient(120deg, #221a24, #171d2e 55%, #1a1626);
 }
 
 /* The Zoryxa AI button breathes. */

@@ -62,13 +62,13 @@ export default function InboxView() {
   const [accountsList, setAccountsList] = useState<MailAccount[]>([])
   const [activeCategory, setActiveCategory] = useState<string | null>(null)
   const [activeAccount, setActiveAccount] = useState<string | null>(null)
-  const [activeFolder, setActiveFolder] = useState<'inbox' | 'sent'>('inbox')
+  const [activeFolder, setActiveFolder] = useState<'inbox' | 'sent' | 'drafts'>('inbox')
   const [syncing, setSyncing] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const activeCategoryRef = useRef<string | null>(null)
   const activeAccountRef = useRef<string | null>(null)
-  const activeFolderRef = useRef<'inbox' | 'sent'>('inbox')
+  const activeFolderRef = useRef<'inbox' | 'sent' | 'drafts'>('inbox')
   const pendingRef = useRef(0)
   const cancelledRef = useRef(false)
 
@@ -85,16 +85,18 @@ export default function InboxView() {
       activeCategoryRef.current !== cat ||
       activeAccountRef.current !== acc ||
       activeFolderRef.current !== fol
+    const fq: { folder: 'inbox' | 'sent'; drafts?: boolean } =
+      fol === 'drafts' ? { folder: 'inbox', drafts: true } : { folder: fol }
     if (cat && fol === 'inbox') {
       const [full, filtered] = await Promise.all([
-        api.emails({ folder: fol, account: acc ?? undefined, limit: 100 }),
-        api.emails({ folder: fol, category: cat, account: acc ?? undefined, limit: 100 }),
+        api.emails({ ...fq, account: acc ?? undefined, limit: 100 }),
+        api.emails({ ...fq, category: cat, account: acc ?? undefined, limit: 100 }),
       ])
       if (stale()) return
       setAllEmails(full)
       setEmails(filtered)
     } else {
-      const full = await api.emails({ folder: fol, account: acc ?? undefined, limit: 100 })
+      const full = await api.emails({ ...fq, account: acc ?? undefined, limit: 100 })
       if (stale()) return
       setAllEmails(full)
       setEmails(full)
@@ -201,7 +203,8 @@ export default function InboxView() {
     const acc = activeAccountRef.current
     api
       .emails({
-        folder: activeFolderRef.current,
+        folder: activeFolderRef.current === 'sent' ? 'sent' : 'inbox',
+        drafts: activeFolderRef.current === 'drafts',
         category: key ?? undefined,
         account: acc ?? undefined,
         limit: 100,
@@ -234,7 +237,7 @@ export default function InboxView() {
   )
 
   const handleFolderChange = useCallback(
-    (folder: 'inbox' | 'sent') => {
+    (folder: 'inbox' | 'sent' | 'drafts') => {
       if (activeFolderRef.current === folder) return
       setActiveFolder(folder)
       activeFolderRef.current = folder
@@ -340,7 +343,7 @@ export default function InboxView() {
       <div className="max-w-screen-sm mx-auto pb-28 anim-in">
         <div className="px-4 pt-3">
           <div className="bg-paper border border-line rounded-xl p-1 flex">
-            {(['inbox', 'sent'] as const).map((f) => (
+            {(['inbox', 'sent', 'drafts'] as const).map((f) => (
               <button
                 key={f}
                 type="button"
@@ -350,7 +353,7 @@ export default function InboxView() {
                   (activeFolder === f ? 'bg-navy text-white shadow-card' : 'text-muted')
                 }
               >
-                {f === 'inbox' ? 'Inbox' : 'Sent'}
+                {f === 'inbox' ? 'Inbox' : f === 'sent' ? 'Sent' : 'Drafts'}
               </button>
             ))}
           </div>
@@ -429,6 +432,42 @@ export default function InboxView() {
           {error && (
             <div className="bg-red-50 text-red-700 rounded-xl p-3 text-sm mb-3">{error}</div>
           )}
+
+          {activeFolder === 'inbox' &&
+            activeCategory === null &&
+            emails !== null &&
+            (() => {
+              const priority = allEmails
+                .filter((e) => e.actionRequired && !e.isRead)
+                .slice(0, 3)
+              if (priority.length === 0) return null
+              return (
+                <div className="priority-card rounded-2xl p-4 mb-3 border border-line/50">
+                  <div className="flex items-center gap-1.5 mb-2">
+                    <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 text-golddeep" fill="currentColor" aria-hidden="true">
+                      <path d="M12 2l2.1 6.1L20.5 10l-6.4 1.9L12 18l-2.1-6.1L3.5 10l6.4-1.9L12 2z" />
+                    </svg>
+                    <span className="text-[11px] font-display font-bold tracking-[0.2em] text-muted">
+                      PRIORITY
+                    </span>
+                  </div>
+                  <div className="space-y-2">
+                    {priority.map((p) => (
+                      <Link key={p.id} to={'/email/' + p.id} className="block active:opacity-70 transition">
+                        <span className="text-sm">
+                          <span className="font-bold">{p.fromName}</span>{' '}
+                          <span className="text-muted">
+                            {(p.tldr || p.subject).length > 76
+                              ? (p.tldr || p.subject).slice(0, 76) + '…'
+                              : p.tldr || p.subject}
+                          </span>
+                        </span>
+                      </Link>
+                    ))}
+                  </div>
+                </div>
+              )
+            })()}
 
           {emails === null ? (
             <SkeletonList />

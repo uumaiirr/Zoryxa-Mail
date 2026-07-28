@@ -1,25 +1,22 @@
-import type { Deadline, SyncResult } from '../../shared/types'
+import type { SyncResult } from '../../shared/types'
 import * as accounts from './accounts'
 import { optionalEnv } from './env'
 import { llmJson } from './llm'
 import * as mailbox from './mailbox'
-import { replyPrompt, summarizeBatchPrompt, type SummarizeInput } from './prompts'
+import { triagePrompt, type TriageInput } from './prompts'
 import * as store from './store'
 
-const BATCH_SIZE = 8 // emails per LLM call
-const MAX_BATCHES_PER_RUN = 3 // callers re-invoke while `pending` > 0
-const MAX_AUTO_DRAFTS_PER_RUN = 2 // reply drafts written per sync pass
+const SNIPPET_BATCH = 25 // preview texts pulled per pass (one IMAP connection)
+const TRIAGE_BATCH = 25 // emails sorted per LLM call — cheap, metadata only
+const MAX_BATCHES_PER_RUN = 2
 const DEBOUNCE_MS = 3 * 60_000
 
-interface SummaryOut {
+interface TriageOut {
   index: number
-  tldr: string
   category: string
   newCategory?: { label?: string; description?: string }
-  participants?: string[]
-  deadlines?: Deadline[]
+  priority?: string
   actionRequired?: boolean
-  tasks?: string[]
   suggestReply?: boolean
 }
 
@@ -62,18 +59,23 @@ export function todayIn(timezone: string): string {
 
 /**
  * One sync pass across EVERY connected mail account (Gmail and IMAP):
- *  1. Pull new messages into Supabase (metadata only). An account's very first
- *     sync backfills the last 30 days (up to 100 mails); later syncs look at
- *     the last 3 days. Each account debounces independently.
- *  2. Summarize a bounded number of pending emails (any account).
- *  3. Auto-draft replies (in each account owner's voice) for reply-worthy
- *     mail — drafts are stored, NEVER sent.
+ *  1. Pull new message metadata; walk history backward toward the first email.
+ *  2. Pull a short preview for anything missing one — no AI.
+ *  3. TRIAGE: one cheap AI call sorts 25 emails (category, priority, spam,
+ *     worth-replying) from metadata + preview only.
  *  4. Renew Gmail push watches nearing expiry.
- * Bounded per invocation; call again while `pending` > 0. LLM failures leave
- * emails pending — never crash the sync.
+ * Full summaries and reply drafts are NOT produced here — they are generated
+ * on demand when the CEO opens an email (see functions/email-analyze.ts).
+ * Bounded per invocation; call again while `pending` > 0.
  */
 export async function runSync(
-  opts: { force?: boolean; debounceMs?: number; accountId?: string } = {},
+  opts: {
+    force?: boolean
+    debounceMs?: number
+    accountId?: string
+    /** Light pass for latency-sensitive callers (digest): no history dig. */
+    light?: boolean
+  } = {},
 ): Promise<SyncResult> {
   const all = await accounts.listAllAccounts()
   const targets = opts.accountId ? all.filter((a) => a.id === opts.accountId) : all
@@ -86,11 +88,17 @@ export async function runSync(
     const fresh = acc.lastSyncAt !== null && Date.now() - Date.parse(acc.lastSyncAt) < debounce
     if (fresh && !opts.force) continue
     anyFetched = true
-    // Inbox history goes deep (90 days on first sync, continued across runs);
-    // Sent is synced as browsable history and skips the AI pipeline.
+    // How far back the first sync reaches is the owner's choice (Settings →
+    // "Load mail from"); later syncs only look at the last few days.
+    let historyDays = 90
+    try {
+      historyDays = (await store.getSettings(acc.userId)).historyDays
+    } catch {
+      /* default */
+    }
     const folders: { folder: 'inbox' | 'sent'; sinceDays: number; max: number }[] = [
-      { folder: 'inbox', sinceDays: firstEver ? 90 : 3, max: firstEver ? 300 : 50 },
-      { folder: 'sent', sinceDays: firstEver ? 90 : 3, max: firstEver ? 200 : 30 },
+      { folder: 'inbox', sinceDays: firstEver ? historyDays : 3, max: firstEver ? 300 : 50 },
+      { folder: 'sent', sinceDays: firstEver ? historyDays : 3, max: firstEver ? 200 : 30 },
     ]
     let accNew = 0
     for (const f of folders) {
@@ -120,14 +128,15 @@ export async function runSync(
       }
     }
 
-    // History dig: one batch per folder per sync, walking backward until the
-    // very FIRST email in the mailbox is stored. Skipped while a busy recent
-    // fetch already filled this invocation.
-    if (accNew < 50) {
+    // History dig: one batch per folder per sync, walking backward through the
+    // chosen window. Skipped while a busy recent fetch already filled this run,
+    // and skipped entirely when the owner asked for a short window.
+    const digCutoff = Date.now() - historyDays * 86400_000
+    if (!opts.light && accNew < 50) {
       for (const f of ['inbox', 'sent'] as const) {
         try {
           const oldest = await store.oldestEmail(acc.id, f)
-          if (!oldest) continue
+          if (!oldest || Date.parse(oldest.receivedAt) < digCutoff) continue
           const known = await store.knownProviderIds(
             acc.id,
             new Date(Date.parse(oldest.receivedAt) - 3 * 86400_000).toISOString(),
@@ -148,33 +157,19 @@ export async function runSync(
   }
 
   const accById = new Map(all.map((a) => [a.id, a]))
-  let summarized = 0
 
-  for (let b = 0; b < MAX_BATCHES_PER_RUN; b++) {
-    // Categories/timezone are per user, so each batch serves ONE user: take the
-    // oldest pending user's emails first; the next loop pass picks up the next.
-    const candidates = await store.listUnsummarized(BATCH_SIZE * 3)
-    if (candidates.length === 0) break
-    const batchUserId = accById.get(candidates[0].accountId)?.userId
-    const pendingRows = candidates
-      .filter((r) => accById.get(r.accountId)?.userId === batchUserId)
-      .slice(0, BATCH_SIZE)
-    if (pendingRows.length === 0 || !batchUserId) break
-    const settings = await store.getSettings(batchUserId)
-    const validKeys = new Set(settings.categories.map((c) => c.key))
-    let categoriesDirty = false
-    const today = todayIn(settings.timezone)
-
-    // Fetch every body for the batch efficiently: one IMAP connection per
-    // account, bounded parallel for Gmail.
-    const bodiesByRow = new Map<string, string>()
-    const rowsByAcc = new Map<string, typeof pendingRows>()
-    for (const row of pendingRows) {
-      const list = rowsByAcc.get(row.accountId) ?? []
+  // ── Pass 1: preview text (no AI) ────────────────────────────────────────────
+  // One connection per account pulls short previews for anything missing one.
+  // This alone makes the list feel like a real mail app immediately.
+  try {
+    const needSnippet = await store.listNeedingSnippet(SNIPPET_BATCH)
+    const byAcc = new Map<string, typeof needSnippet>()
+    for (const row of needSnippet) {
+      const list = byAcc.get(row.accountId) ?? []
       list.push(row)
-      rowsByAcc.set(row.accountId, list)
+      byAcc.set(row.accountId, list)
     }
-    for (const [accId, rows] of rowsByAcc) {
+    for (const [accId, rows] of byAcc) {
       const acc = accById.get(accId)
       if (!acc) continue
       try {
@@ -183,31 +178,56 @@ export async function runSync(
           rows.map((r) => store.providerIdOf(r)),
         )
         for (const r of rows) {
-          const b = bodies.get(store.providerIdOf(r))
-          if (b) bodiesByRow.set(r.id, b)
+          const body = bodies.get(store.providerIdOf(r))
+          if (!body) continue
+          const preview = stripQuoted(body).replace(/\s+/g, ' ').trim().slice(0, 300)
+          if (preview) await store.saveSnippet(r.id, preview)
         }
       } catch (e) {
-        console.error('batch body fetch failed', acc.email, e)
+        console.error('preview fetch failed', acc.email, e)
       }
     }
-    const inputs: SummarizeInput[] = pendingRows.map((row, i) => ({
+  } catch (e) {
+    console.error('preview pass failed', e)
+  }
+
+  // ── Pass 2: triage ──────────────────────────────────────────────────────────
+  // ONE cheap AI call sorts 25 emails from metadata + preview: category,
+  // priority, spam, worth-replying. Deep summaries and reply drafts are
+  // generated later, only for the email the CEO actually opens.
+  let summarized = 0
+  const maxBatches = opts.light ? 1 : MAX_BATCHES_PER_RUN
+  for (let b = 0; b < maxBatches; b++) {
+    const candidates = await store.listUnsummarized(TRIAGE_BATCH * 2)
+    if (candidates.length === 0) break
+    const batchUserId = accById.get(candidates[0].accountId)?.userId
+    if (!batchUserId) break
+    const rows = candidates
+      .filter((r) => accById.get(r.accountId)?.userId === batchUserId)
+      .slice(0, TRIAGE_BATCH)
+    if (rows.length === 0) break
+
+    const settings = await store.getSettings(batchUserId)
+    const validKeys = new Set(settings.categories.map((c) => c.key))
+    let categoriesDirty = false
+    const today = todayIn(settings.timezone)
+
+    const inputs: TriageInput[] = rows.map((row, i) => ({
       index: i,
       from: `${row.fromName} <${row.fromEmail}>`,
       subject: row.subject,
       date: row.receivedAt,
-      body: stripQuoted(bodiesByRow.get(row.id) || row.snippet || row.subject).slice(0, 3500),
+      preview: (row.snippet || '(no preview)').slice(0, 260),
     }))
 
     try {
-      const out = await llmJson<{ results: SummaryOut[] } | SummaryOut[]>(
-        summarizeBatchPrompt(inputs, settings.categories, today),
-        // Keep reserved tokens small: Groq's free tier admits requests against
-        // a 12k tokens/min budget that includes max_tokens.
-        { maxTokens: 1200 },
+      const out = await llmJson<{ results: TriageOut[] } | TriageOut[]>(
+        triagePrompt(inputs, settings.categories, today),
+        { maxTokens: 1800, provider: settings.llmProvider },
       )
       const results = Array.isArray(out) ? out : (out.results ?? [])
       for (const r of results) {
-        const row = pendingRows[r.index]
+        const row = rows[r.index]
         if (!row) continue
         // The AI owns the taxonomy: when nothing fits, it invents a category
         // that becomes part of this user's set from then on.
@@ -231,13 +251,12 @@ export async function runSync(
             category = 'system'
           }
         }
-        await store.saveSummary(row.id, {
-          tldr: String(r.tldr ?? '').slice(0, 300),
+        const p = String(r.priority ?? 'normal')
+        await store.saveTriage(row.id, {
           category,
-          participants: (r.participants ?? []).map(String).slice(0, 10),
-          deadlines: (r.deadlines ?? []).slice(0, 10),
+          priority:
+            p === 'high' || p === 'low' || p === 'spam' ? (p as 'high' | 'low' | 'spam') : 'normal',
           actionRequired: Boolean(r.actionRequired),
-          tasks: (r.tasks ?? []).map(String).slice(0, 10),
           suggestReply: Boolean(r.suggestReply),
         })
         summarized++
@@ -248,63 +267,16 @@ export async function runSync(
         })
       }
     } catch (e) {
-      // Rate limit or provider hiccup: stop here, emails stay pending and the
-      // next sync (push, frontend poll, or hourly cron) picks them up.
-      console.error('summarization batch failed (will retry next sync)', e)
+      // Rate limit or provider hiccup: rows stay pending for the next pass.
+      console.error('triage batch failed (will retry next sync)', e)
       break
     }
   }
 
-  const drafted = await autoDraftReplies(accById)
-  if (anyFetched) await renewWatchesIfDue(all)
+  if (anyFetched && !opts.light) await renewWatchesIfDue(all)
 
   const pending = await store.countUnsummarized()
-  return { skipped: !anyFetched && !opts.force, newEmails, summarized, drafted, pending }
-}
-
-/** Pre-writes replies (per-account voice) for reply-worthy mail. Never sends. */
-async function autoDraftReplies(accById: Map<string, accounts.Account>): Promise<number> {
-  let drafted = 0
-  try {
-    const candidates = await store.listNeedingDrafts(MAX_AUTO_DRAFTS_PER_RUN)
-    for (const email of candidates) {
-      const acc = accById.get(email.accountId)
-      if (!acc) continue
-      try {
-        // Stored style only — building profiles belongs to /api/style/refresh
-        // and the user-facing draft endpoints. Null style still drafts well.
-        const stored = await store.getStyle(acc.id)
-        let body = email.snippet
-        try {
-          body = await mailbox.getBody(acc, store.providerIdOf(email))
-        } catch {
-          /* snippet fallback */
-        }
-        const draft = await llmJson<{ subject: string; body: string }>(
-          replyPrompt({
-            fromName: email.fromName,
-            fromEmail: email.fromEmail,
-            subject: email.subject,
-            date: email.receivedAt,
-            body: stripQuoted(body || email.subject).slice(0, 6000),
-            style: stored?.profile ?? null,
-            examples: stored?.examples ?? [],
-          }),
-          { maxTokens: 900 },
-        )
-        if (typeof draft.subject === 'string' && typeof draft.body === 'string' && draft.body.trim()) {
-          await store.saveDraft(email.id, draft.subject, draft.body)
-          drafted++
-        }
-      } catch (e) {
-        console.error('auto-draft failed (will retry next sync)', email.id, e)
-        break // likely rate-limited — stop drafting this run
-      }
-    }
-  } catch (e) {
-    console.error('auto-draft pass failed', e)
-  }
-  return drafted
+  return { skipped: !anyFetched && !opts.force, newEmails, summarized, drafted: 0, pending }
 }
 
 /** Keeps real-time push alive: Gmail watches expire every ~7 days. */

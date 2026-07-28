@@ -7,6 +7,11 @@ import './index.css'
 
 registerSW({ immediate: true })
 
+// Theme: explicit choice wins; the default is Light (Settings → Appearance).
+const savedTheme = localStorage.getItem('zx-theme')
+if (savedTheme === 'auto') delete document.documentElement.dataset.theme
+else document.documentElement.dataset.theme = savedTheme === 'dark' ? 'dark' : 'light'
+
 async function boot() {
   // Demo mode is statically eliminated from production builds (VITE_DEMO unset).
   if (import.meta.env.VITE_DEMO === '1') {
