@@ -59,17 +59,11 @@ function sanitize(raw: Partial<AppSettings>): AppSettings {
     throw new HttpError(400, 'The digest email address does not look valid — check it and try again')
   }
 
-  const sendAs = String(raw.sendAs ?? '').trim()
-  if (sendAs !== '' && !EMAIL_RE.test(sendAs)) {
-    throw new HttpError(400, 'The send-from address does not look valid — check it and try again')
-  }
-
   return {
     categories,
     digestHour,
     timezone,
     digestTo,
-    sendAs,
     llmProvider: raw.llmProvider === 'groq' ? 'groq' : 'gemini',
   }
 }

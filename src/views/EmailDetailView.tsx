@@ -199,7 +199,7 @@ export default function EmailDetailView() {
         cc: draft.cc || undefined,
         subject: draft.subject,
         body: draft.body,
-        replyToGmailId: id,
+        replyToId: id,
       })
       setConfirmOpen(false)
       setSent(true)

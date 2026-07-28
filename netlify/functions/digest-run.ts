@@ -1,7 +1,8 @@
 import type { Config } from '@netlify/functions'
 import type { DigestContent, DigestItem } from '../../shared/types'
-import * as gmail from '../lib/gmail'
+import * as accounts from '../lib/accounts'
 import { handle, HttpError, json } from '../lib/http'
+import * as mailbox from '../lib/mailbox'
 import { llmJson } from '../lib/llm'
 import { digestNarrativePrompt } from '../lib/prompts'
 import { hasValidSession, requireCronOrSession } from '../lib/session'
@@ -169,7 +170,7 @@ export default handle(async (req) => {
     return a.receivedAt < b.receivedAt ? 1 : a.receivedAt > b.receivedAt ? -1 : 0
   })
   const topItems: DigestItem[] = sorted.slice(0, 8).map((e) => ({
-    gmailId: e.gmailId,
+    id: e.id,
     fromName: e.fromName,
     subject: e.subject,
     tldr: e.tldr || e.snippet.slice(0, 120),
@@ -230,12 +231,20 @@ export default handle(async (req) => {
   }).format(new Date())
   const siteUrl = process.env.SITE_URL ?? ''
 
+  // Send from the first connected Gmail account, else the first account.
+  const allAccounts = await accounts.listAccounts()
+  const sender =
+    allAccounts.find((a) => a.kind === 'gmail' && a.refreshTokenEnc) ?? allAccounts[0]
+  if (!sender) {
+    return json({ ok: true, sent: false, reason: 'No mail account connected yet' })
+  }
+
   // Mark as emailed BEFORE sending: if the platform kills this invocation
   // mid-send, the cron's retry must not double-email the CEO. A send that
   // fails cleanly resets the marker below so a later tick retries.
   await store.saveDigest(today, content, new Date().toISOString())
   try {
-    await gmail.sendMail({
+    await mailbox.sendFrom(sender, {
       to: settings.digestTo,
       subject: `Morning Digest — ${humanDate}`,
       body: buildText(content, humanDate, siteUrl),

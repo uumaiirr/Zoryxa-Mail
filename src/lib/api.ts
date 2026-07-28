@@ -5,6 +5,8 @@ import type {
   DraftResult,
   EmailDetail,
   EmailSummary,
+  ImapAccountInput,
+  MailAccount,
   SyncResult,
 } from '../../shared/types'
 
@@ -58,25 +60,45 @@ export const api = {
 
   authStatus: () => j<AuthStatus>('/api/auth/status'),
 
-  emails: (params: { category?: string; limit?: number; before?: string } = {}) =>
+  accounts: () => j<MailAccount[]>('/api/accounts'),
+
+  addImapAccount: (input: ImapAccountInput) =>
+    j<MailAccount>('/api/accounts', { method: 'POST', body: JSON.stringify(input) }),
+
+  deleteAccount: (id: string) =>
+    j<{ ok: true }>(`/api/accounts/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+
+  updateAccount: (id: string, patch: { label?: string; sendAs?: string }) =>
+    j<MailAccount>(`/api/accounts/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      body: JSON.stringify(patch),
+    }),
+
+  emails: (params: { category?: string; account?: string; limit?: number; before?: string } = {}) =>
     j<EmailSummary[]>(`/api/emails${qs(params)}`),
 
-  email: (gmailId: string) => j<EmailDetail>(`/api/emails/${encodeURIComponent(gmailId)}`),
+  email: (id: string) => j<EmailDetail>(`/api/emails/${encodeURIComponent(id)}`),
 
   sync: (force = false) =>
     j<SyncResult>('/api/sync', { method: 'POST', body: JSON.stringify({ force }) }),
 
-  draftReply: (gmailId: string, instruction?: string) =>
+  draftReply: (id: string, instruction?: string) =>
     j<DraftResult>('/api/draft/reply', {
       method: 'POST',
-      body: JSON.stringify({ gmailId, instruction }),
+      body: JSON.stringify({ id, instruction }),
     }),
 
   draftCompose: (instruction: string) =>
     j<DraftResult>('/api/draft/compose', { method: 'POST', body: JSON.stringify({ instruction }) }),
 
-  send: (payload: { to: string; cc?: string; subject: string; body: string; replyToGmailId?: string }) =>
-    j<{ ok: true; id: string }>('/api/send', { method: 'POST', body: JSON.stringify(payload) }),
+  send: (payload: {
+    to: string
+    cc?: string
+    subject: string
+    body: string
+    replyToId?: string
+    fromAccountId?: string
+  }) => j<{ ok: true; id: string }>('/api/send', { method: 'POST', body: JSON.stringify(payload) }),
 
   digestToday: () => j<{ digest: DigestRecord | null }>('/api/digest/today'),
 
@@ -87,6 +109,9 @@ export const api = {
   saveSettings: (s: AppSettings) =>
     j<AppSettings>('/api/settings', { method: 'PUT', body: JSON.stringify(s) }),
 
-  styleRefresh: () =>
-    j<{ ok: true; sampleCount: number }>('/api/style/refresh', { method: 'POST', body: '{}' }),
+  styleRefresh: (accountId: string) =>
+    j<{ ok: true; sampleCount: number }>('/api/style/refresh', {
+      method: 'POST',
+      body: JSON.stringify({ accountId }),
+    }),
 }

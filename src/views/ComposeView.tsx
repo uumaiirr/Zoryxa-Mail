@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import type { MailAccount } from '../../shared/types'
 import { api, ApiError } from '../lib/api'
 import TopBar from '../components/TopBar'
 import DraftEditor from '../components/DraftEditor'
@@ -29,6 +30,8 @@ export default function ComposeView() {
   const [sending, setSending] = useState(false)
   const [sent, setSent] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [accountsList, setAccountsList] = useState<MailAccount[]>([])
+  const [fromAccountId, setFromAccountId] = useState<string | null>(null)
   const timerRef = useRef<number | null>(null)
 
   useEffect(
@@ -37,6 +40,21 @@ export default function ComposeView() {
     },
     [],
   )
+
+  useEffect(() => {
+    let cancelled = false
+    api
+      .accounts()
+      .then((accs) => {
+        if (cancelled) return
+        setAccountsList(accs)
+        setFromAccountId((cur) => cur ?? accs[0]?.id ?? null)
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   async function generate() {
     if (!instruction.trim() || generating) return
@@ -69,6 +87,7 @@ export default function ComposeView() {
         cc: draft.cc || undefined,
         subject: draft.subject,
         body: draft.body,
+        fromAccountId: fromAccountId ?? undefined,
       })
       setConfirmOpen(false)
       setSent(true)
@@ -83,6 +102,7 @@ export default function ComposeView() {
 
   const canSend =
     draft !== null &&
+    fromAccountId !== null &&
     EMAIL_RE.test(draft.to) &&
     draft.subject.trim() !== '' &&
     draft.body.trim() !== ''
@@ -151,6 +171,29 @@ export default function ComposeView() {
           </div>
         ) : (
           <div className="mt-4">
+            {accountsList.length === 0 && (
+              <div className="rounded-xl bg-goldsoft p-3.5 text-sm text-navydeep mb-3">
+                Connect a mail account in Settings before sending.
+              </div>
+            )}
+            {accountsList.length > 1 && (
+              <div className="card p-4 mb-3">
+                <label className="text-xs font-semibold uppercase tracking-wide text-muted">
+                  From
+                </label>
+                <select
+                  value={fromAccountId ?? ''}
+                  onChange={(e) => setFromAccountId(e.target.value || null)}
+                  className="mt-1.5 w-full rounded-xl border border-line bg-mist px-3.5 py-2.5 text-[15px] focus:outline-none focus:ring-2 focus:ring-gold/60 focus:bg-paper transition"
+                >
+                  {accountsList.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.label} — {a.email}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
             <DraftEditor
               to={draft.to}
               cc={draft.cc}

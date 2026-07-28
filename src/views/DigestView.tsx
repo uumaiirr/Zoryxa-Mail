@@ -185,7 +185,7 @@ export default function DigestView() {
           <section className="mt-4">
             <h2 className="text-xs uppercase font-semibold text-muted mb-2">Top priorities</h2>
             {c.topItems.map((item) => (
-              <Link key={item.gmailId} to={`/email/${item.gmailId}`} className="card p-3.5 mb-2 block">
+              <Link key={item.id} to={`/email/${item.id}`} className="card p-3.5 mb-2 block">
                 <div className="flex items-center gap-2">
                   <span className="font-semibold text-sm flex-1 truncate">{item.fromName}</span>
                   {item.actionRequired && (

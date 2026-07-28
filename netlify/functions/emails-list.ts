@@ -9,6 +9,7 @@ export default handle(async (req) => {
 
   const params = new URL(req.url).searchParams
   const category = params.get('category')
+  const account = params.get('account')
   const before = params.get('before')
 
   const rawLimit = Number.parseInt(params.get('limit') ?? '', 10)
@@ -16,6 +17,7 @@ export default handle(async (req) => {
 
   const emails = await store.listEmails({
     category: category || undefined,
+    account: account || undefined,
     limit,
     before: before || undefined,
   })

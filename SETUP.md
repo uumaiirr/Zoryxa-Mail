@@ -179,6 +179,8 @@ The app uses Google's Gemini for summaries and drafting. It's free and needs **n
 | `TOKEN_ENCRYPTION_KEY` | A 64-character random code | **Make it up randomly** — see the box below. This one MUST be exactly 64 characters, each one of `0-9` or `a-f` |
 | `CRON_SECRET` | A 64-character random code | **Make it up randomly** — see the box below. You'll paste this same value into GitHub in Part 7, and into the Pub/Sub push URL if you did Part 4B |
 | `GMAIL_PUSH_TOPIC` | `projects/YOUR_PROJECT_ID/topics/gmail-push` | Only if you did Part 4B (real-time arrival). Leave blank otherwise |
+
+> **Note:** there is no `SEND_AS` variable anymore — the From address is set per mail account inside the app (Settings → Mail accounts → "Send as"). You can also connect **multiple mailboxes** (more Gmail accounts, or any IMAP mailbox like the office cPanel one, Outlook, or Yahoo) from Settings → Mail accounts → "Add IMAP account". The app's built-in **Guide** (the book card at the top of Settings) walks through every field with the common server settings.
 | `SITE_URL` | Your site's address | **Skip for now** — added in step 10 below, after you know the address |
 | `DIGEST_TO` | `walid@dubaiconsultancy.ae` | The CEO's own inbox — where the morning digest is emailed |
 | `SEND_AS` | `walid@dubaiconsultancy.ae` | The "Send mail as" alias from Part 4 — outgoing drafts are sent from this address |

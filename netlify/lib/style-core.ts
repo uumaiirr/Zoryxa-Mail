@@ -1,7 +1,8 @@
 import type { StyleProfile } from '../../shared/types'
-import * as gmail from './gmail'
+import { getAccount } from './accounts'
 import { HttpError } from './http'
 import { llmJson } from './llm'
+import * as mailbox from './mailbox'
 import { stylePrompt } from './prompts'
 import * as store from './store'
 
@@ -28,38 +29,42 @@ function normalizeProfile(raw: unknown): StyleProfile {
 }
 
 /**
- * Learns the CEO's writing style from recent sent mail, persists it, and
- * returns the profile plus a few real example bodies for few-shot prompting.
+ * Learns one account owner's writing style from their recent sent mail,
+ * persists it, and returns the profile plus example bodies for few-shot use.
  */
-export async function buildStyleProfile(): Promise<{
+export async function buildStyleProfile(accountId: string): Promise<{
   profile: StyleProfile
   examples: string[]
   sampleCount: number
 }> {
-  const samples = await gmail.listSentSamples()
+  const acc = await getAccount(accountId)
+  if (!acc) throw new HttpError(404, 'Mail account not found')
+  const samples = await mailbox.sentSamples(acc)
   if (samples.length === 0) {
-    throw new HttpError(409, 'No sent mail found to learn from yet — send a few emails first')
+    throw new HttpError(
+      409,
+      `No sent mail found for ${acc.email} yet — send a few emails first (IMAP accounts need a "Sent" folder)`,
+    )
   }
   const raw = await llmJson<StyleProfile>(stylePrompt(samples), { maxTokens: 800 })
   const profile = normalizeProfile(raw)
   const examples = samples.slice(0, 3).map((s) => s.body.slice(0, 800))
-  await store.saveStyle(profile, examples)
+  await store.saveStyle(accountId, profile, examples)
   return { profile, examples, sampleCount: samples.length }
 }
 
 /**
- * Returns the stored style profile, building one on the fly if none exists.
- * Drafting must work even before any style exists, so build failures degrade
- * to a null profile instead of throwing.
+ * Returns the account's stored style, building it on first use. Drafting must
+ * work even with no style yet, so build failures degrade to a null profile.
  */
-export async function getStyleOrBuild(): Promise<{
+export async function getStyleOrBuild(accountId: string): Promise<{
   profile: StyleProfile | null
   examples: string[]
 }> {
-  const existing = await store.getStyle()
+  const existing = await store.getStyle(accountId)
   if (existing) return { profile: existing.profile, examples: existing.examples }
   try {
-    const built = await buildStyleProfile()
+    const built = await buildStyleProfile(accountId)
     return { profile: built.profile, examples: built.examples }
   } catch (e) {
     console.error('style build failed, drafting without profile', e)

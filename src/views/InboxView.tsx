@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { AppSettings, EmailSummary } from '../../shared/types'
+import type { AppSettings, EmailSummary, MailAccount } from '../../shared/types'
 import { api, ApiError } from '../lib/api'
 import CategoryChips from '../components/CategoryChips'
 import EmailCard from '../components/EmailCard'
@@ -38,30 +38,35 @@ export default function InboxView() {
   const [settings, setSettings] = useState<AppSettings | null>(null)
   const [emails, setEmails] = useState<EmailSummary[] | null>(null)
   const [allEmails, setAllEmails] = useState<EmailSummary[]>([])
+  const [accountsList, setAccountsList] = useState<MailAccount[]>([])
   const [activeCategory, setActiveCategory] = useState<string | null>(null)
+  const [activeAccount, setActiveAccount] = useState<string | null>(null)
   const [syncing, setSyncing] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const activeCategoryRef = useRef<string | null>(null)
+  const activeAccountRef = useRef<string | null>(null)
   const cancelledRef = useRef(false)
 
   // Refetch the full list (for counts) and the visible list for the active
-  // category. limit 100 matches the server backfill cap so chip counts stay
-  // truthful. If the user switches category while a fetch is in flight, the
-  // stale response is dropped instead of overwriting the newer list.
+  // category/account. limit 100 matches the server backfill cap so chip counts
+  // stay truthful. If the user switches filters while a fetch is in flight,
+  // the stale response is dropped instead of overwriting the newer list.
   const refetchEmails = useCallback(async () => {
     const cat = activeCategoryRef.current
-    const stale = () => cancelledRef.current || activeCategoryRef.current !== cat
+    const acc = activeAccountRef.current
+    const stale = () =>
+      cancelledRef.current || activeCategoryRef.current !== cat || activeAccountRef.current !== acc
     if (cat) {
       const [full, filtered] = await Promise.all([
-        api.emails({ limit: 100 }),
-        api.emails({ category: cat, limit: 100 }),
+        api.emails({ account: acc ?? undefined, limit: 100 }),
+        api.emails({ category: cat, account: acc ?? undefined, limit: 100 }),
       ])
       if (stale()) return
       setAllEmails(full)
       setEmails(filtered)
     } else {
-      const full = await api.emails({ limit: 100 })
+      const full = await api.emails({ account: acc ?? undefined, limit: 100 })
       if (stale()) return
       setAllEmails(full)
       setEmails(full)
@@ -103,11 +108,16 @@ export default function InboxView() {
     cancelledRef.current = false
     void (async () => {
       try {
-        const [s, list] = await Promise.all([api.settings(), api.emails({ limit: 100 })])
+        const [s, list, accs] = await Promise.all([
+          api.settings(),
+          api.emails({ limit: 100 }),
+          api.accounts().catch(() => [] as MailAccount[]),
+        ])
         if (cancelledRef.current) return
         setSettings(s)
         setAllEmails(list)
         setEmails(list)
+        setAccountsList(accs)
       } catch (e) {
         if (!cancelledRef.current) {
           setError(messageOf(e))
@@ -146,8 +156,9 @@ export default function InboxView() {
     activeCategoryRef.current = key
     setError(null)
     setEmails(null)
+    const acc = activeAccountRef.current
     api
-      .emails({ category: key ?? undefined, limit: 100 })
+      .emails({ category: key ?? undefined, account: acc ?? undefined, limit: 100 })
       .then((list) => {
         if (cancelledRef.current || activeCategoryRef.current !== key) return
         setEmails(list)
@@ -159,6 +170,21 @@ export default function InboxView() {
         setEmails([])
       })
   }, [])
+
+  const handleAccountChange = useCallback(
+    (id: string | null) => {
+      setActiveAccount(id)
+      activeAccountRef.current = id
+      setError(null)
+      setEmails(null)
+      void refetchEmails().catch((e) => {
+        if (cancelledRef.current || activeAccountRef.current !== id) return
+        setError(messageOf(e))
+        setEmails([])
+      })
+    },
+    [refetchEmails],
+  )
 
   const handleRefresh = useCallback(() => {
     if (syncing) return
@@ -212,6 +238,40 @@ export default function InboxView() {
       />
 
       <div className="max-w-screen-sm mx-auto pb-28 anim-in">
+        {accountsList.length > 1 && (
+          <div
+            className="px-4 pt-3 flex gap-2 overflow-x-auto"
+            style={{ scrollbarWidth: 'none' }}
+          >
+            <button
+              type="button"
+              onClick={() => handleAccountChange(null)}
+              className={
+                'rounded-full px-3.5 py-2 text-sm font-medium whitespace-nowrap shrink-0 min-h-[40px] transition ' +
+                (activeAccount === null
+                  ? 'bg-navy text-white'
+                  : 'bg-paper border border-line text-muted')
+              }
+            >
+              All inboxes
+            </button>
+            {accountsList.map((a) => (
+              <button
+                key={a.id}
+                type="button"
+                onClick={() => handleAccountChange(a.id)}
+                className={
+                  'rounded-full px-3.5 py-2 text-sm font-medium whitespace-nowrap shrink-0 min-h-[40px] transition ' +
+                  (activeAccount === a.id
+                    ? 'bg-navy text-white'
+                    : 'bg-paper border border-line text-muted')
+                }
+              >
+                {a.label}
+              </button>
+            ))}
+          </div>
+        )}
         <div className="px-4 pt-3">
           <CategoryChips
             categories={settings?.categories ?? []}
@@ -236,9 +296,14 @@ export default function InboxView() {
             <div className="space-y-3">
               {emails.map((email) => (
                 <EmailCard
-                  key={email.gmailId}
+                  key={email.id}
                   email={email}
                   category={settings?.categories.find((c) => c.key === email.category)}
+                  accountLabel={
+                    accountsList.length > 1 && activeAccount === null
+                      ? accountsList.find((a) => a.id === email.accountId)?.label
+                      : undefined
+                  }
                 />
               ))}
             </div>

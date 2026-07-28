@@ -6,6 +6,7 @@ The app is a React 18 + Vite 5 PWA designed for a non-technical CEO on a Huawei 
 
 ## Features
 
+- Multiple mailboxes in one app: connect several Gmail accounts (OAuth) and any IMAP/SMTP mailbox (office cPanel, Outlook, Yahoo) side by side — per-account writing styles and send-as aliases, an account switcher in the inbox, one merged digest, and an in-app Guide (`/guide`) that walks through connecting every kind of mailbox
 - Real-time arrival: Gmail push notifications (Cloud Pub/Sub) land new mail in the app within seconds; the hourly scheduler and on-open sync are the safety net, and the inbox quietly refreshes itself while open
 - New mail is fetched, batch-summarized, and categorized on arrival; the first-ever sync backfills the last 30 days of inbox history
 - One-line TL;DR, participants, deadlines, action-required flag, and task list per email

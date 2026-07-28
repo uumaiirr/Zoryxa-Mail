@@ -6,6 +6,7 @@ import BottomNav from './components/BottomNav'
 import ComposeView from './views/ComposeView'
 import DigestView from './views/DigestView'
 import EmailDetailView from './views/EmailDetailView'
+import GuideView from './views/GuideView'
 import InboxView from './views/InboxView'
 import LoginView from './views/LoginView'
 import SettingsView from './views/SettingsView'
@@ -41,7 +42,7 @@ export default function App() {
   if (auth === 'loading') return <Splash />
   if (!auth || !auth.authed) return <Navigate to="/login" replace />
 
-  const showNav = ['/', '/digest', '/settings'].includes(location.pathname)
+  const showNav = ['/', '/digest', '/settings', '/guide'].includes(location.pathname)
 
   return (
     <div className="min-h-screen bg-mist">
@@ -51,6 +52,7 @@ export default function App() {
         <Route path="/compose" element={<ComposeView />} />
         <Route path="/digest" element={<DigestView />} />
         <Route path="/settings" element={<SettingsView auth={auth} />} />
+        <Route path="/guide" element={<GuideView />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       {showNav && <BottomNav />}

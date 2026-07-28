@@ -7,6 +7,7 @@ import type {
   DigestRecord,
   EmailDetail,
   EmailSummary,
+  MailAccount,
   SyncResult,
 } from '../../shared/types'
 
@@ -30,11 +31,31 @@ const settings: AppSettings = {
   digestHour: 7,
   timezone: 'Asia/Dubai',
   digestTo: 'walid@dubaiconsultancy.ae',
-  sendAs: 'walid@dubaiconsultancy.ae',
   llmProvider: 'gemini',
 }
 
-interface DemoEmail extends Omit<EmailSummary, 'hasDraft'> {
+const accounts: MailAccount[] = [
+  {
+    id: 'acc-office',
+    kind: 'gmail',
+    label: 'Office (bridge)',
+    email: 'walid.bridge@gmail.com',
+    sendAs: 'walid@dubaiconsultancy.ae',
+  },
+  {
+    id: 'acc-personal',
+    kind: 'imap',
+    label: 'Personal',
+    email: 'walid.personal@outlook.com',
+    sendAs: 'walid.personal@outlook.com',
+  },
+]
+
+// Which demo emails belong to the personal account; everything else is office.
+const PERSONAL_IDS = new Set(['d7', 'd10'])
+const accountOf = (id: string) => (PERSONAL_IDS.has(id) ? 'acc-personal' : 'acc-office')
+
+interface DemoEmail extends Omit<EmailSummary, 'hasDraft' | 'accountId'> {
   body: string
 }
 
@@ -52,7 +73,7 @@ const drafts: Record<string, { subject: string; body: string }> = {
 
 const emails: DemoEmail[] = [
   {
-    gmailId: 'd1',
+    id: 'd1',
     threadId: 't1',
     fromName: 'Ibrahim Osei',
     fromEmail: 'i.osei@afreximbank.com',
@@ -71,7 +92,7 @@ const emails: DemoEmail[] = [
     body: 'Dear Walid,\n\nFollowing our call last week, I am pleased to confirm that the committee has approved the partnership framework for CANEX WKND 2026 in Lagos.\n\nTo secure the Gold pavilion position we discussed, we would need the signed exhibitor package back by Thursday, 30 July. The package reflects the revised terms: 96 sqm pavilion, six delegate passes, and speaking slot on the creative-economy panel.\n\nPlease let me know if you would like a short call before signing.\n\nWarm regards,\nIbrahim Osei\nSenior Manager, Export Development\nAfreximbank',
   },
   {
-    gmailId: 'd2',
+    id: 'd2',
     threadId: 't2',
     fromName: 'Fatima Al Marri',
     fromEmail: 'f.almarri@jafza.ae',
@@ -90,7 +111,7 @@ const emails: DemoEmail[] = [
     body: 'Dear Mr. Walid,\n\nGreetings from JAFZA.\n\nYour trade license renewal application (ref. LR-2026-08841) is in progress. Two documents remain outstanding:\n\n1. Audited financial statements for 2025\n2. Attested tenancy contract for the current office\n\nKindly upload both through the customer portal before 5 August to avoid late fees.\n\nBest regards,\nFatima Al Marri\nLicensing Department, JAFZA',
   },
   {
-    gmailId: 'd3',
+    id: 'd3',
     threadId: 't3',
     fromName: 'UAE Ministry of Economy',
     fromEmail: 'events@moec.gov.ae',
@@ -109,7 +130,7 @@ const emails: DemoEmail[] = [
     body: 'Dear Mr. Walid,\n\nThe Ministry of Economy cordially invites you to the quarterly UAE–Africa Trade Council roundtable.\n\nDate: Friday, 1 August 2026\nTime: 10:00 – 12:30\nVenue: Emirates Towers, Godolphin Ballroom\n\nThe session will focus on trade-corridor financing and creative-economy exports. Kindly confirm attendance by replying to this email.\n\nWith regards,\nProtocol Office\nMinistry of Economy',
   },
   {
-    gmailId: 'd4',
+    id: 'd4',
     threadId: 't4',
     fromName: 'Horizon Media FZ LLC',
     fromEmail: 'accounts@horizonmedia.ae',
@@ -128,7 +149,7 @@ const emails: DemoEmail[] = [
     body: 'Dear Sir,\n\nPlease find attached invoice HM-2214 for AED 38,500 covering the IATF digital campaign (June–July).\n\nPayment is due by 3 August 2026 to the account listed on the invoice. Kindly share the transfer confirmation when processed.\n\nBest regards,\nAccounts Receivable\nHorizon Media FZ LLC',
   },
   {
-    gmailId: 'd5',
+    id: 'd5',
     threadId: 't5',
     fromName: 'Sara Mahmoud',
     fromEmail: 'sara@dubaiconsultancy.ae',
@@ -147,7 +168,7 @@ const emails: DemoEmail[] = [
     body: 'Hi Walid,\n\nQuick summary before the weekend:\n\n• Three proposals went out (Kano AgriTech, Lagos Fashion Week, GITEX follow-up)\n• Lagos travel and freight for CANEX are booked and on budget\n• Amina joins us Monday as project coordinator — onboarding is ready\n\nNothing needs your input today.\n\nSara',
   },
   {
-    gmailId: 'd6',
+    id: 'd6',
     threadId: 't6',
     fromName: 'Daniel Craven',
     fromEmail: 'd.craven@meridianexhibits.com',
@@ -166,7 +187,7 @@ const emails: DemoEmail[] = [
     body: 'Dear Walid,\n\nThank you for the walkthrough brief. Our quote for the 240 sqm double-deck pavilion at IATF 2027 Algiers comes to USD 96,000 including design, build, and dismantle. The quote is valid for 30 days.\n\nHappy to revise scope if you want to trim the hospitality deck.\n\nBest,\nDaniel Craven\nMeridian Exhibits',
   },
   {
-    gmailId: 'd7',
+    id: 'd7',
     threadId: 't7',
     fromName: 'Gulf Business Briefing',
     fromEmail: 'newsletter@gulfbusiness.com',
@@ -185,7 +206,7 @@ const emails: DemoEmail[] = [
     body: 'Good morning.\n\nUAE non-oil foreign trade rose 11% in H1. New freelance visa rules take effect in September. Emaar posts record quarter. Full stories on the site.\n\n— Gulf Business Briefing',
   },
   {
-    gmailId: 'd8',
+    id: 'd8',
     threadId: 't8',
     fromName: 'Google Workspace',
     fromEmail: 'no-reply@google.com',
@@ -204,7 +225,7 @@ const emails: DemoEmail[] = [
     body: 'We noticed a new sign-in to your Google Account on a Windows device. If this was you, no action is needed.\n\n— Google Workspace',
   },
   {
-    gmailId: 'd9',
+    id: 'd9',
     threadId: 't9',
     fromName: 'Amara Nwosu',
     fromEmail: 'amara@lagosfashionweek.ng',
@@ -223,7 +244,7 @@ const emails: DemoEmail[] = [
     body: 'Walid,\n\nThe board loved the direction of the sponsorship deck. Two requests before we sign:\n\n1. Update the ROI slide with the 2025 actuals you mentioned\n2. Add a smaller tier-2 sponsor option for regional brands\n\nIf we can have the revised deck this week, we can countersign before month-end.\n\nWarmly,\nAmara',
   },
   {
-    gmailId: 'd10',
+    id: 'd10',
     threadId: 't10',
     fromName: 'Khalid Al Rashid',
     fromEmail: 'khalid.rashid@gmail.com',
@@ -242,7 +263,7 @@ const emails: DemoEmail[] = [
     body: 'Walid, it has been too long!\n\nAisha and I are hosting a small dinner on Friday at 8 — just old friends, no work talk (I promise). Tell me you can make it.\n\nKhalid',
   },
   {
-    gmailId: 'd11',
+    id: 'd11',
     threadId: 't11',
     fromName: 'Zoom',
     fromEmail: 'billing@zoom.us',
@@ -261,7 +282,7 @@ const emails: DemoEmail[] = [
     body: 'Thank you for your payment.\n\nZoom One Pro — annual renewal\nAmount: $149.90\nPayment method: Visa •• 4821\n\nThis is a receipt; no action is required.',
   },
   {
-    gmailId: 'd12',
+    id: 'd12',
     threadId: 't12',
     fromName: 'Emirates NBD',
     fromEmail: 'alerts@emiratesnbd.com',
@@ -298,11 +319,11 @@ const digest: DigestRecord = {
       { key: 'system', label: 'System', count: 2 },
     ],
     topItems: [
-      { gmailId: 'd1', fromName: 'Ibrahim Osei', subject: 'CANEX WKND 2026 — partnership next steps', tldr: 'Afreximbank approved the partnership; sign the exhibitor package by Thursday.', category: 'client', actionRequired: true },
-      { gmailId: 'd2', fromName: 'Fatima Al Marri', subject: 'Trade license renewal — two documents pending', tldr: 'JAFZA needs financials and tenancy contract by 5 August.', category: 'government', actionRequired: true },
-      { gmailId: 'd3', fromName: 'Ministry of Economy', subject: 'UAE–Africa Trade Council roundtable', tldr: 'RSVP required for the 1 August roundtable.', category: 'government', actionRequired: true },
-      { gmailId: 'd4', fromName: 'Horizon Media', subject: 'Invoice HM-2214', tldr: 'AED 38,500 due 3 August for the IATF campaign.', category: 'finance', actionRequired: true },
-      { gmailId: 'd9', fromName: 'Amara Nwosu', subject: 'Feedback on the sponsorship deck', tldr: 'Two revisions requested before LFW signs.', category: 'client', actionRequired: true },
+      { id: 'd1', fromName: 'Ibrahim Osei', subject: 'CANEX WKND 2026 — partnership next steps', tldr: 'Afreximbank approved the partnership; sign the exhibitor package by Thursday.', category: 'client', actionRequired: true },
+      { id: 'd2', fromName: 'Fatima Al Marri', subject: 'Trade license renewal — two documents pending', tldr: 'JAFZA needs financials and tenancy contract by 5 August.', category: 'government', actionRequired: true },
+      { id: 'd3', fromName: 'Ministry of Economy', subject: 'UAE–Africa Trade Council roundtable', tldr: 'RSVP required for the 1 August roundtable.', category: 'government', actionRequired: true },
+      { id: 'd4', fromName: 'Horizon Media', subject: 'Invoice HM-2214', tldr: 'AED 38,500 due 3 August for the IATF campaign.', category: 'finance', actionRequired: true },
+      { id: 'd9', fromName: 'Amara Nwosu', subject: 'Feedback on the sponsorship deck', tldr: 'Two revisions requested before LFW signs.', category: 'client', actionRequired: true },
     ],
     deadlines: [
       { date: '2026-07-30', what: 'Return signed CANEX exhibitor package', subject: 'CANEX WKND 2026 — partnership next steps' },
@@ -317,8 +338,7 @@ const digest: DigestRecord = {
 
 const authStatus: AuthStatus = {
   authed: true,
-  gmailConnected: true,
-  grantedEmail: 'walid.bridge@gmail.com',
+  accountCount: accounts.length,
 }
 
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms))
@@ -339,24 +359,65 @@ export function installDemo(): void {
     if (path === '/api/login') return json({ ok: true })
     if (path === '/api/auth/status') return json(authStatus)
 
+    if (path === '/api/accounts') {
+      if (init?.method === 'POST') {
+        await delay(1200)
+        const b = JSON.parse(String(init.body)) as { label?: string; email?: string; sendAs?: string }
+        const created: MailAccount = {
+          id: 'acc-' + Math.random().toString(36).slice(2, 8),
+          kind: 'imap',
+          label: b.label || b.email || 'New account',
+          email: b.email || '',
+          sendAs: b.sendAs || b.email || '',
+        }
+        accounts.push(created)
+        return json(created, 201)
+      }
+      return json(accounts)
+    }
+
+    const accountMatch = path.match(/^\/api\/accounts\/([^/]+)$/)
+    if (accountMatch) {
+      const acc = accounts.find((a) => a.id === decodeURIComponent(accountMatch[1]))
+      if (!acc) return json({ error: 'Mail account not found' }, 404)
+      if (init?.method === 'DELETE') {
+        accounts.splice(accounts.indexOf(acc), 1)
+        return json({ ok: true })
+      }
+      if (init?.method === 'PUT') {
+        const b = JSON.parse(String(init.body)) as { label?: string; sendAs?: string }
+        if (b.label !== undefined) acc.label = b.label
+        if (b.sendAs !== undefined) acc.sendAs = b.sendAs
+        return json(acc)
+      }
+      return json(acc)
+    }
+
     if (path === '/api/emails') {
       const cat = params.get('category')
+      const account = params.get('account')
       const list: EmailSummary[] = emails
         .filter((e) => !cat || e.category === cat)
-        .map(({ body: _body, ...rest }) => ({ ...rest, hasDraft: Boolean(drafts[rest.gmailId]) }))
+        .filter((e) => !account || accountOf(e.id) === account)
+        .map(({ body: _body, ...rest }) => ({
+          ...rest,
+          accountId: accountOf(rest.id),
+          hasDraft: Boolean(drafts[rest.id]),
+        }))
       return json(list)
     }
 
     const detailMatch = path.match(/^\/api\/emails\/([^/]+)$/)
     if (detailMatch) {
-      const e = emails.find((x) => x.gmailId === decodeURIComponent(detailMatch[1]))
+      const e = emails.find((x) => x.id === decodeURIComponent(detailMatch[1]))
       if (!e) return json({ error: 'Email not found' }, 404)
       e.isRead = true
       const detail: EmailDetail = {
         ...e,
+        accountId: accountOf(e.id),
         isRead: true,
-        hasDraft: Boolean(drafts[e.gmailId]),
-        draft: drafts[e.gmailId] ?? null,
+        hasDraft: Boolean(drafts[e.id]),
+        draft: drafts[e.id] ?? null,
       }
       return json(detail)
     }
@@ -368,8 +429,8 @@ export function installDemo(): void {
 
     if (path === '/api/draft/reply') {
       await delay(900)
-      const body = init?.body ? (JSON.parse(String(init.body)) as { gmailId: string }) : null
-      const original_ = emails.find((x) => x.gmailId === body?.gmailId) ?? emails[0]
+      const body = init?.body ? (JSON.parse(String(init.body)) as { id: string }) : null
+      const original_ = emails.find((x) => x.id === body?.id) ?? emails[0]
       return json({
         to: original_.fromEmail,
         subject: `Re: ${original_.subject}`,

@@ -1,6 +1,13 @@
 import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
-import type { AppSettings, AuthStatus, Category } from '../../shared/types'
+import { Link } from 'react-router-dom'
+import type {
+  AppSettings,
+  AuthStatus,
+  Category,
+  ImapAccountInput,
+  MailAccount,
+} from '../../shared/types'
 import { api, ApiError } from '../lib/api'
 import TopBar from '../components/TopBar'
 
@@ -29,6 +36,257 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
   )
 }
 
+function messageOf(e: unknown): string {
+  return e instanceof ApiError ? e.message : 'Something went wrong — please try again.'
+}
+
+const emptyImapForm = {
+  label: '',
+  email: '',
+  imapHost: '',
+  imapPort: '993',
+  imapUser: '',
+  imapPass: '',
+  smtpHost: '',
+  smtpPort: '587',
+  smtpUser: '',
+  smtpPass: '',
+  sendAs: '',
+}
+
+function AccountsSection() {
+  const [accounts, setAccounts] = useState<MailAccount[] | null>(null)
+  const [formOpen, setFormOpen] = useState(false)
+  const [form, setForm] = useState({ ...emptyImapForm })
+  const [sameCreds, setSameCreds] = useState(true)
+  const [busy, setBusy] = useState(false)
+  const [notice, setNotice] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
+  const [styleBusyId, setStyleBusyId] = useState<string | null>(null)
+  const [rowMsg, setRowMsg] = useState<Record<string, string>>({})
+
+  const load = () =>
+    api
+      .accounts()
+      .then(setAccounts)
+      .catch(() => setAccounts([]))
+
+  useEffect(() => {
+    void load()
+  }, [])
+
+  function setF(p: Partial<typeof emptyImapForm>) {
+    setForm((f) => ({ ...f, ...p }))
+  }
+
+  async function addImap() {
+    if (busy) return
+    setBusy(true)
+    setNotice(null)
+    try {
+      const input: ImapAccountInput = {
+        label: form.label.trim() || form.email.trim(),
+        email: form.email.trim(),
+        sendAs: form.sendAs.trim() || undefined,
+        imapHost: form.imapHost.trim(),
+        imapPort: Number(form.imapPort),
+        imapUser: form.imapUser.trim() || form.email.trim(),
+        imapPass: form.imapPass,
+        smtpHost: form.smtpHost.trim() || form.imapHost.trim(),
+        smtpPort: Number(form.smtpPort),
+        smtpUser: sameCreds ? form.imapUser.trim() || form.email.trim() : form.smtpUser.trim(),
+        smtpPass: sameCreds ? form.imapPass : form.smtpPass,
+      }
+      await api.addImapAccount(input)
+      setFormOpen(false)
+      setForm({ ...emptyImapForm })
+      setNotice({ kind: 'ok', text: 'Account added — first emails arrive in a minute.' })
+      void api.sync(true).catch(() => {})
+      void load()
+    } catch (e) {
+      setNotice({ kind: 'err', text: messageOf(e) })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function saveSendAs(acc: MailAccount, value: string) {
+    const v = value.trim()
+    if (v === acc.sendAs) return
+    try {
+      await api.updateAccount(acc.id, { sendAs: v })
+      setRowMsg((m) => ({ ...m, [acc.id]: 'Saved ✓' }))
+      window.setTimeout(() => setRowMsg((m) => ({ ...m, [acc.id]: '' })), 1600)
+      void load()
+    } catch (e) {
+      setRowMsg((m) => ({ ...m, [acc.id]: messageOf(e) }))
+    }
+  }
+
+  async function rebuildStyle(acc: MailAccount) {
+    if (styleBusyId) return
+    setStyleBusyId(acc.id)
+    setRowMsg((m) => ({ ...m, [acc.id]: 'Reading sent mail…' }))
+    try {
+      const r = await api.styleRefresh(acc.id)
+      setRowMsg((m) => ({ ...m, [acc.id]: `Learned from ${r.sampleCount} emails ✓` }))
+    } catch (e) {
+      setRowMsg((m) => ({ ...m, [acc.id]: messageOf(e) }))
+    } finally {
+      setStyleBusyId(null)
+    }
+  }
+
+  async function remove(acc: MailAccount) {
+    if (!window.confirm(`Remove ${acc.email}? Its summaries disappear from this app.`)) return
+    try {
+      await api.deleteAccount(acc.id)
+      void load()
+    } catch (e) {
+      setNotice({ kind: 'err', text: messageOf(e) })
+    }
+  }
+
+  return (
+    <Section title="Mail accounts">
+      {notice && (
+        <div
+          className={
+            'rounded-xl p-3 text-sm mb-3 ' +
+            (notice.kind === 'ok'
+              ? 'bg-emerald-50 border border-emerald-200 text-emerald-700'
+              : 'bg-red-50 border border-red-200 text-red-700')
+          }
+        >
+          {notice.text}
+        </div>
+      )}
+
+      {accounts === null ? (
+        <div className="animate-pulse h-16 bg-line rounded-xl" />
+      ) : accounts.length === 0 ? (
+        <p className="text-sm text-muted">
+          No mailbox connected yet — connect Gmail or add an IMAP account below. The Guide explains
+          every step.
+        </p>
+      ) : (
+        accounts.map((acc, i) => (
+          <div key={acc.id}>
+            {i > 0 && <div className="border-t border-line my-4" />}
+            <div className="flex items-start gap-3">
+              <span className="w-9 h-9 rounded-lg bg-goldsoft flex items-center justify-center text-navydeep shrink-0">
+                {acc.kind === 'gmail' ? (
+                  <svg viewBox="0 0 24 24" className="w-4.5 h-4.5 w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2} strokeLinejoin="round" aria-hidden="true">
+                    <rect x="3" y="5" width="18" height="14" rx="2" />
+                    <path d="m3 7 9 6 9-6" />
+                  </svg>
+                ) : (
+                  <svg viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" aria-hidden="true">
+                    <rect x="3" y="4" width="18" height="7" rx="2" />
+                    <rect x="3" y="13" width="18" height="7" rx="2" />
+                    <path d="M7 7.5h.01M7 16.5h.01" />
+                  </svg>
+                )}
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="font-semibold truncate">{acc.label}</div>
+                <div className="text-xs text-muted truncate">{acc.email}</div>
+              </div>
+              <button
+                type="button"
+                onClick={() => void remove(acc)}
+                className="w-9 h-9 flex items-center justify-center text-muted shrink-0"
+                aria-label={`Remove ${acc.email}`}
+              >
+                <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" aria-hidden="true">
+                  <path d="M6 6l12 12M18 6 6 18" />
+                </svg>
+              </button>
+            </div>
+            <label className="block text-xs font-medium text-muted mb-1.5 mt-3">
+              Send as (the From address on outgoing mail)
+            </label>
+            <input
+              type="email"
+              className={inputClass}
+              defaultValue={acc.sendAs}
+              placeholder={acc.email}
+              onBlur={(e) => void saveSendAs(acc, e.target.value)}
+            />
+            <div className="flex items-center justify-between mt-2">
+              <button
+                type="button"
+                className="text-sm text-navy underline py-2"
+                onClick={() => void rebuildStyle(acc)}
+                disabled={styleBusyId !== null}
+              >
+                Rebuild writing style
+              </button>
+              {rowMsg[acc.id] && <span className="text-xs text-muted">{rowMsg[acc.id]}</span>}
+            </div>
+          </div>
+        ))
+      )}
+
+      <div className="flex gap-3 mt-4">
+        <button
+          type="button"
+          className="btn-ghost flex-1"
+          onClick={() => {
+            window.location.href = '/api/auth/google/start'
+          }}
+        >
+          Connect Gmail
+        </button>
+        <button type="button" className="btn-ghost flex-1" onClick={() => setFormOpen((v) => !v)}>
+          Add IMAP account
+        </button>
+      </div>
+
+      {formOpen && (
+        <div className="mt-4 rounded-xl border border-line bg-mist/60 p-4 space-y-3">
+          <div>
+            <label className="block text-xs font-medium text-muted mb-1.5">Name</label>
+            <input type="text" className={inputClass} placeholder="e.g. Office mailbox" value={form.label} onChange={(e) => setF({ label: e.target.value })} />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-muted mb-1.5">Email address</label>
+            <input type="email" className={inputClass} value={form.email} onChange={(e) => setF({ email: e.target.value })} />
+          </div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted pt-1">Incoming (IMAP)</p>
+          <div className="flex gap-2">
+            <input type="text" className={`${inputClass} flex-1`} placeholder="mail.yourdomain.com" value={form.imapHost} onChange={(e) => setF({ imapHost: e.target.value })} aria-label="IMAP server" />
+            <input type="number" className={`${inputClass} w-24`} value={form.imapPort} onChange={(e) => setF({ imapPort: e.target.value })} aria-label="IMAP port" />
+          </div>
+          <input type="text" className={inputClass} placeholder="Username (usually the full email address)" value={form.imapUser} onChange={(e) => setF({ imapUser: e.target.value })} aria-label="IMAP username" />
+          <input type="password" className={inputClass} placeholder="Password" value={form.imapPass} onChange={(e) => setF({ imapPass: e.target.value })} aria-label="IMAP password" />
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted pt-1">Outgoing (SMTP)</p>
+          <div className="flex gap-2">
+            <input type="text" className={`${inputClass} flex-1`} placeholder="Same server, or smtp.…" value={form.smtpHost} onChange={(e) => setF({ smtpHost: e.target.value })} aria-label="SMTP server" />
+            <input type="number" className={`${inputClass} w-24`} value={form.smtpPort} onChange={(e) => setF({ smtpPort: e.target.value })} aria-label="SMTP port" />
+          </div>
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={sameCreds} onChange={(e) => setSameCreds(e.target.checked)} className="w-4 h-4 accent-[#122B44]" />
+            Same username and password as incoming
+          </label>
+          {!sameCreds && (
+            <>
+              <input type="text" className={inputClass} placeholder="Outgoing username" value={form.smtpUser} onChange={(e) => setF({ smtpUser: e.target.value })} aria-label="SMTP username" />
+              <input type="password" className={inputClass} placeholder="Outgoing password" value={form.smtpPass} onChange={(e) => setF({ smtpPass: e.target.value })} aria-label="SMTP password" />
+            </>
+          )}
+          <div>
+            <label className="block text-xs font-medium text-muted mb-1.5">Send as (optional alias)</label>
+            <input type="email" className={inputClass} placeholder="Leave blank to send as the email above" value={form.sendAs} onChange={(e) => setF({ sendAs: e.target.value })} />
+          </div>
+          <button type="button" className="btn-primary w-full" onClick={() => void addImap()} disabled={busy}>
+            {busy ? 'Checking the mail server…' : 'Verify & add'}
+          </button>
+        </div>
+      )}
+    </Section>
+  )
+}
+
 export default function SettingsView(props: { auth: AuthStatus }) {
   const [settings, setSettings] = useState<AppSettings | null>(null)
   const [snapshot, setSnapshot] = useState<string | null>(null)
@@ -36,9 +294,6 @@ export default function SettingsView(props: { auth: AuthStatus }) {
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [gmailBanner, setGmailBanner] = useState<'connected' | 'error' | null>(null)
-  const [styleBusy, setStyleBusy] = useState(false)
-  const [styleDone, setStyleDone] = useState<string | null>(null)
-  const [styleError, setStyleError] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -138,21 +393,6 @@ export default function SettingsView(props: { auth: AuthStatus }) {
     }
   }
 
-  async function refreshStyle() {
-    if (styleBusy) return
-    setStyleBusy(true)
-    setStyleDone(null)
-    setStyleError(null)
-    try {
-      const r = await api.styleRefresh()
-      setStyleDone(`Learned from ${r.sampleCount} sent emails.`)
-    } catch (e) {
-      setStyleError(e instanceof ApiError ? e.message : 'Could not read your sent mail — please try again.')
-    } finally {
-      setStyleBusy(false)
-    }
-  }
-
   return (
     <>
       <TopBar title="Settings" />
@@ -181,38 +421,25 @@ export default function SettingsView(props: { auth: AuthStatus }) {
           </div>
         )}
 
-        <Section title="Gmail connection">
-          {props.auth.gmailConnected ? (
-            <>
-              <div className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
-                <span className="font-semibold">Connected</span>
-              </div>
-              {props.auth.grantedEmail && (
-                <div className="text-sm text-muted mt-1">{props.auth.grantedEmail}</div>
-              )}
-              <p className="text-xs text-muted mt-2">
-                Reading through the bridge account — your office mailbox is never modified.
-              </p>
-            </>
-          ) : (
-            <>
-              <div className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full bg-amber-400" />
-                <span className="text-sm font-semibold text-amber-600">Not connected yet</span>
-              </div>
-              <button
-                type="button"
-                className="btn-primary w-full mt-3"
-                onClick={() => {
-                  window.location.href = '/api/auth/google/start'
-                }}
-              >
-                Connect Gmail
-              </button>
-            </>
-          )}
-        </Section>
+        <Link to="/guide" className="card p-4 mt-4 flex items-center gap-3 active:scale-[0.99] transition">
+          <span className="w-10 h-10 rounded-xl bg-goldsoft flex items-center justify-center text-navydeep shrink-0">
+            <svg viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M2 4.5A2.5 2.5 0 0 1 4.5 2H12v17H4.5A2.5 2.5 0 0 0 2 21.5v-17Z" />
+              <path d="M22 4.5A2.5 2.5 0 0 0 19.5 2H12v17h7.5a2.5 2.5 0 0 1 2.5 2.5v-17Z" />
+            </svg>
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block font-semibold">How to connect your mail</span>
+            <span className="block text-xs text-muted">
+              Step-by-step guide for Gmail, office and personal mailboxes
+            </span>
+          </span>
+          <svg viewBox="0 0 24 24" className="w-4 h-4 text-muted shrink-0" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" aria-hidden="true">
+            <path d="m9 6 6 6-6 6" />
+          </svg>
+        </Link>
+
+        <AccountsSection />
 
         {settings === null ? (
           <div className="animate-pulse mt-5 space-y-3">
@@ -262,17 +489,6 @@ export default function SettingsView(props: { auth: AuthStatus }) {
                 onChange={(e) => patch({ digestTo: e.target.value })}
               />
 
-              <label className="block text-xs font-medium text-muted mb-1.5 mt-3" htmlFor="send-as">
-                Send replies as
-              </label>
-              <input
-                id="send-as"
-                type="email"
-                className={inputClass}
-                value={settings.sendAs}
-                onChange={(e) => patch({ sendAs: e.target.value })}
-              />
-
               <p className="text-xs text-muted mt-3">
                 The digest is emailed to you and appears in the Digest tab.
               </p>
@@ -292,20 +508,8 @@ export default function SettingsView(props: { auth: AuthStatus }) {
                 <option value="groq">Groq (free)</option>
               </select>
 
-              <div className="border-t border-line my-4" />
-
-              <button
-                type="button"
-                className="btn-ghost w-full"
-                onClick={refreshStyle}
-                disabled={styleBusy}
-              >
-                {styleBusy ? 'Reading your sent mail…' : 'Rebuild writing style'}
-              </button>
-              {styleDone && <p className="text-emerald-600 text-sm mt-2">{styleDone}</p>}
-              {styleError && <p className="text-red-600 text-sm mt-2">{styleError}</p>}
               <p className="text-xs text-muted mt-3">
-                The assistant studies how you write so drafts sound like you.
+                Each account has its own writing style — rebuild it from the account's row above.
               </p>
             </Section>
 

@@ -13,8 +13,31 @@ export interface Deadline {
   what: string
 }
 
+export interface MailAccount {
+  id: string
+  kind: 'gmail' | 'imap'
+  label: string
+  email: string
+  sendAs: string
+}
+
+export interface ImapAccountInput {
+  label: string
+  email: string
+  sendAs?: string
+  imapHost: string
+  imapPort: number
+  imapUser: string
+  imapPass: string
+  smtpHost: string
+  smtpPort: number
+  smtpUser: string
+  smtpPass: string
+}
+
 export interface EmailSummary {
-  gmailId: string
+  id: string // opaque: `${accountId}~${providerId}`
+  accountId: string
   threadId: string
   fromName: string
   fromEmail: string
@@ -46,7 +69,7 @@ export interface DraftResult {
 }
 
 export interface DigestItem {
-  gmailId: string
+  id: string
   fromName: string
   subject: string
   tldr: string
@@ -74,15 +97,13 @@ export interface AppSettings {
   categories: Category[]
   digestHour: number // 0-23, local to `timezone`
   timezone: string // IANA, e.g. 'Asia/Dubai'
-  digestTo: string // where the morning digest email is sent (the CEO)
-  sendAs: string // the "Send mail as" alias used as From on outgoing mail
+  digestTo: string // where the morning digest email is sent (the owner)
   llmProvider: 'gemini' | 'groq'
 }
 
 export interface AuthStatus {
   authed: boolean
-  gmailConnected: boolean
-  grantedEmail: string | null
+  accountCount: number // connected mail accounts
 }
 
 export interface SyncResult {

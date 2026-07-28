@@ -6,7 +6,8 @@ import type {
   EmailSummary,
   StyleProfile,
 } from '../../shared/types'
-import { decrypt, encrypt } from './crypto'
+import { emailKey } from './accounts'
+import type { MailMeta } from './mailbox'
 import { DEFAULT_CATEGORIES } from './prompts'
 import { db } from './supabase'
 
@@ -20,7 +21,8 @@ function check<T>(r: { data: T | null; error: { message: string } | null }, what
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function rowToEmail(r: any): EmailSummary {
   return {
-    gmailId: r.gmail_id,
+    id: r.id,
+    accountId: r.account_id,
     threadId: r.thread_id,
     fromName: r.from_name,
     fromEmail: r.from_email,
@@ -40,21 +42,17 @@ function rowToEmail(r: any): EmailSummary {
   }
 }
 
-export interface EmailMetaInput {
-  gmailId: string
-  threadId: string
-  fromName: string
-  fromEmail: string
-  toEmails: string[]
-  subject: string
-  snippet: string
-  receivedAt: string
+/** providerId is needed for live body fetches; not exposed to the client. */
+export function providerIdOf(e: EmailSummary): string {
+  return e.id.slice(e.accountId.length + 1)
 }
 
-export async function upsertEmailMetas(metas: EmailMetaInput[]): Promise<number> {
+export async function upsertEmailMetas(accountId: string, metas: MailMeta[]): Promise<number> {
   if (metas.length === 0) return 0
   const rows = metas.map((m) => ({
-    gmail_id: m.gmailId,
+    id: emailKey(accountId, m.providerId),
+    account_id: accountId,
+    provider_id: m.providerId,
     thread_id: m.threadId,
     from_name: m.fromName,
     from_email: m.fromEmail,
@@ -65,19 +63,25 @@ export async function upsertEmailMetas(metas: EmailMetaInput[]): Promise<number>
   }))
   const res = await db()
     .from('emails')
-    .upsert(rows, { onConflict: 'gmail_id', ignoreDuplicates: true })
-    .select('gmail_id')
+    .upsert(rows, { onConflict: 'id', ignoreDuplicates: true })
+    .select('id')
   return check(res, 'upsertEmailMetas')?.length ?? 0
 }
 
-export async function existingGmailIds(ids: string[]): Promise<Set<string>> {
-  if (ids.length === 0) return new Set()
-  const res = await db().from('emails').select('gmail_id').in('gmail_id', ids)
-  return new Set(check(res, 'existingGmailIds').map((r: { gmail_id: string }) => r.gmail_id))
+/** Provider ids already stored for an account since `sinceIso`. */
+export async function knownProviderIds(accountId: string, sinceIso: string): Promise<Set<string>> {
+  const res = await db()
+    .from('emails')
+    .select('provider_id')
+    .eq('account_id', accountId)
+    .gte('received_at', sinceIso)
+    .limit(1000)
+  return new Set(check(res, 'knownProviderIds').map((r: { provider_id: string }) => r.provider_id))
 }
 
 export async function listEmails(opts: {
   category?: string
+  account?: string
   limit?: number
   before?: string
 }): Promise<EmailSummary[]> {
@@ -87,18 +91,19 @@ export async function listEmails(opts: {
     .order('received_at', { ascending: false })
     .limit(Math.min(opts.limit ?? 50, 100))
   if (opts.category) q = q.eq('category', opts.category)
+  if (opts.account) q = q.eq('account_id', opts.account)
   if (opts.before) q = q.lt('received_at', opts.before)
   return check(await q, 'listEmails').map(rowToEmail)
 }
 
-export async function getEmail(gmailId: string): Promise<EmailSummary | null> {
-  const res = await db().from('emails').select('*').eq('gmail_id', gmailId).maybeSingle()
+export async function getEmail(id: string): Promise<EmailSummary | null> {
+  const res = await db().from('emails').select('*').eq('id', id).maybeSingle()
   const row = check(res, 'getEmail')
   return row ? rowToEmail(row) : null
 }
 
-export async function markRead(gmailId: string): Promise<void> {
-  check(await db().from('emails').update({ is_read: true }).eq('gmail_id', gmailId), 'markRead')
+export async function markRead(id: string): Promise<void> {
+  check(await db().from('emails').update({ is_read: true }).eq('id', id), 'markRead')
 }
 
 export async function listUnsummarized(limit: number): Promise<EmailSummary[]> {
@@ -114,7 +119,7 @@ export async function listUnsummarized(limit: number): Promise<EmailSummary[]> {
 export async function countUnsummarized(): Promise<number> {
   const { count, error } = await db()
     .from('emails')
-    .select('gmail_id', { count: 'exact', head: true })
+    .select('id', { count: 'exact', head: true })
     .eq('summarized', false)
   if (error) throw new Error(`Database error (countUnsummarized): ${error.message}`)
   return count ?? 0
@@ -130,7 +135,7 @@ export interface SummaryInput {
   suggestReply: boolean
 }
 
-export async function saveSummary(gmailId: string, s: SummaryInput): Promise<void> {
+export async function saveSummary(id: string, s: SummaryInput): Promise<void> {
   check(
     await db()
       .from('emails')
@@ -144,7 +149,7 @@ export async function saveSummary(gmailId: string, s: SummaryInput): Promise<voi
         suggest_reply: s.suggestReply,
         summarized: true,
       })
-      .eq('gmail_id', gmailId),
+      .eq('id', id),
     'saveSummary',
   )
 }
@@ -162,7 +167,7 @@ export async function listNeedingDrafts(limit: number): Promise<EmailSummary[]> 
   return check(res, 'listNeedingDrafts').map(rowToEmail)
 }
 
-export async function saveDraft(gmailId: string, subject: string, body: string): Promise<void> {
+export async function saveDraft(id: string, subject: string, body: string): Promise<void> {
   check(
     await db()
       .from('emails')
@@ -171,18 +176,16 @@ export async function saveDraft(gmailId: string, subject: string, body: string):
         draft_body: body,
         draft_generated_at: new Date().toISOString(),
       })
-      .eq('gmail_id', gmailId),
+      .eq('id', id),
     'saveDraft',
   )
 }
 
-export async function getDraft(
-  gmailId: string,
-): Promise<{ subject: string; body: string } | null> {
+export async function getDraft(id: string): Promise<{ subject: string; body: string } | null> {
   const res = await db()
     .from('emails')
     .select('draft_subject, draft_body')
-    .eq('gmail_id', gmailId)
+    .eq('id', id)
     .maybeSingle()
   const row = check(res, 'getDraft')
   if (!row?.draft_body) return null
@@ -207,7 +210,6 @@ function defaultSettings(): AppSettings {
     digestHour: 7,
     timezone: 'Asia/Dubai',
     digestTo: process.env.DIGEST_TO ?? '',
-    sendAs: process.env.SEND_AS ?? '',
     llmProvider: process.env.LLM_PROVIDER === 'groq' ? 'groq' : 'gemini',
   }
 }
@@ -227,14 +229,18 @@ export async function saveSettings(s: AppSettings): Promise<void> {
   )
 }
 
-// ── style profile ─────────────────────────────────────────────────────────────
+// ── style profiles (one per account) ─────────────────────────────────────────
 
-export async function getStyle(): Promise<{
+export async function getStyle(accountId: string): Promise<{
   profile: StyleProfile
   examples: string[]
   updatedAt: string
 } | null> {
-  const res = await db().from('style_profile').select('*').eq('id', 1).maybeSingle()
+  const res = await db()
+    .from('style_profile')
+    .select('*')
+    .eq('account_id', accountId)
+    .maybeSingle()
   const row = check(res, 'getStyle')
   if (!row || !row.profile) return null
   return {
@@ -244,11 +250,15 @@ export async function getStyle(): Promise<{
   }
 }
 
-export async function saveStyle(profile: StyleProfile, examples: string[]): Promise<void> {
+export async function saveStyle(
+  accountId: string,
+  profile: StyleProfile,
+  examples: string[],
+): Promise<void> {
   check(
     await db()
       .from('style_profile')
-      .upsert({ id: 1, profile, examples, updated_at: new Date().toISOString() }),
+      .upsert({ account_id: accountId, profile, examples, updated_at: new Date().toISOString() }),
     'saveStyle',
   )
 }
@@ -272,59 +282,5 @@ export async function saveDigest(
       .from('digests')
       .upsert({ digest_date: date, content, emailed_at: emailedAt }),
     'saveDigest',
-  )
-}
-
-// ── oauth tokens (encrypted at rest) ─────────────────────────────────────────
-
-export async function getRefreshToken(): Promise<{ token: string; email: string | null } | null> {
-  const res = await db().from('oauth_tokens').select('*').eq('id', 1).maybeSingle()
-  const row = check(res, 'getRefreshToken')
-  if (!row) return null
-  return { token: decrypt(row.refresh_token_enc), email: row.granted_email }
-}
-
-export async function saveRefreshToken(token: string, email: string): Promise<void> {
-  check(
-    await db()
-      .from('oauth_tokens')
-      .upsert({
-        id: 1,
-        refresh_token_enc: encrypt(token),
-        granted_email: email,
-        updated_at: new Date().toISOString(),
-      }),
-    'saveRefreshToken',
-  )
-}
-
-// ── sync state ────────────────────────────────────────────────────────────────
-
-export async function getSyncState(): Promise<{
-  lastSyncAt: string | null
-  watchExpiresAt: string | null
-}> {
-  const res = await db().from('sync_state').select('*').eq('id', 1).maybeSingle()
-  const row = check(res, 'getSyncState')
-  return {
-    lastSyncAt: row?.last_sync_at ?? null,
-    watchExpiresAt: row?.watch_expires_at ?? null,
-  }
-}
-
-export async function touchSyncState(): Promise<void> {
-  check(
-    await db().from('sync_state').upsert({ id: 1, last_sync_at: new Date().toISOString() }),
-    'touchSyncState',
-  )
-}
-
-export async function saveWatchExpiry(iso: string): Promise<void> {
-  const existing = await getSyncState()
-  check(
-    await db()
-      .from('sync_state')
-      .upsert({ id: 1, last_sync_at: existing.lastSyncAt, watch_expires_at: iso }),
-    'saveWatchExpiry',
   )
 }

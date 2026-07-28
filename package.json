@@ -20,13 +20,18 @@
     "@google/genai": "^2.13.0",
     "@supabase/supabase-js": "^2.45.4",
     "groq-sdk": "^1.4.0",
+    "imapflow": "^1.6.1",
+    "mailparser": "^3.9.14",
+    "nodemailer": "^9.0.3",
     "react": "18.3.1",
     "react-dom": "18.3.1",
     "react-router-dom": "^6.26.2"
   },
   "devDependencies": {
     "@netlify/functions": "^2.8.1",
+    "@types/mailparser": "^3.4.6",
     "@types/node": "^20.14.15",
+    "@types/nodemailer": "^8.0.1",
     "@types/react": "^18.3.5",
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.1",

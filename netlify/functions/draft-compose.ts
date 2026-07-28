@@ -1,5 +1,6 @@
 import type { Config } from '@netlify/functions'
 import type { DraftResult } from '../../shared/types'
+import * as accounts from '../lib/accounts'
 import { handle, HttpError, json, readJson } from '../lib/http'
 import { llmJson } from '../lib/llm'
 import { composeEmailPrompt } from '../lib/prompts'
@@ -12,14 +13,20 @@ export default handle(async (req) => {
   if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
   requireSession(req)
 
-  const { instruction } = await readJson<{ instruction: string }>(req)
+  const { instruction, accountId } = await readJson<{ instruction: string; accountId?: string }>(req)
   if (typeof instruction !== 'string' || instruction.trim() === '') {
     throw new HttpError(400, 'Tell me what the email should say')
   }
 
   const settings = await store.getSettings()
   const today = todayIn(settings.timezone)
-  const { profile, examples } = await getStyleOrBuild()
+
+  // Voice: the chosen account's style, else the first account's, else none.
+  const all = await accounts.listAccounts()
+  const acc = (typeof accountId === 'string' && all.find((a) => a.id === accountId)) || all[0]
+  const { profile, examples } = acc
+    ? await getStyleOrBuild(acc.id)
+    : { profile: null, examples: [] as string[] }
 
   const draft = await llmJson<{ to?: string; subject: string; body: string }>(
     composeEmailPrompt({
@@ -28,6 +35,7 @@ export default handle(async (req) => {
       examples,
       today,
     }),
+    { maxTokens: 900 },
   )
 
   if (

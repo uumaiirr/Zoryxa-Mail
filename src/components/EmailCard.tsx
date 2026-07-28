@@ -17,13 +17,21 @@ function formatTime(iso: string): string {
   return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
 }
 
-export default function EmailCard(props: { email: EmailSummary; category?: Category }) {
-  const { email, category } = props
+export default function EmailCard(props: {
+  email: EmailSummary
+  category?: Category
+  accountLabel?: string
+}) {
+  const { email, category, accountLabel } = props
   const hasChips =
-    category !== undefined || email.actionRequired || email.deadlines.length > 0 || email.hasDraft
+    category !== undefined ||
+    email.actionRequired ||
+    email.deadlines.length > 0 ||
+    email.hasDraft ||
+    accountLabel !== undefined
 
   return (
-    <Link to={'/email/' + email.gmailId} className="card p-4 block active:scale-[0.99] transition">
+    <Link to={'/email/' + email.id} className="card p-4 block active:scale-[0.99] transition">
       <div className="flex items-center gap-2">
         <div className="flex items-center gap-1.5 min-w-0 flex-1">
           {!email.isRead && (
@@ -49,6 +57,11 @@ export default function EmailCard(props: { email: EmailSummary; category?: Categ
 
       {hasChips && (
         <div className="flex gap-1.5 flex-wrap mt-2">
+          {accountLabel !== undefined && (
+            <span className="rounded-full bg-mist border border-line text-muted text-xs font-medium px-2 py-1">
+              {accountLabel}
+            </span>
+          )}
           {category !== undefined && (
             <span
               className="text-xs font-medium rounded-full px-2 py-1"

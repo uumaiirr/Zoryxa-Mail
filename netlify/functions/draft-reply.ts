@@ -1,8 +1,9 @@
 import type { Config } from '@netlify/functions'
 import type { DraftResult } from '../../shared/types'
-import * as gmail from '../lib/gmail'
+import * as accounts from '../lib/accounts'
 import { handle, HttpError, json, readJson } from '../lib/http'
 import { llmJson } from '../lib/llm'
+import * as mailbox from '../lib/mailbox'
 import { replyPrompt } from '../lib/prompts'
 import { requireSession } from '../lib/session'
 import * as store from '../lib/store'
@@ -12,22 +13,24 @@ export default handle(async (req) => {
   if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
   requireSession(req)
 
-  const { gmailId, instruction } = await readJson<{ gmailId: string; instruction?: string }>(req)
-  if (typeof gmailId !== 'string' || gmailId.trim() === '') {
+  const { id, instruction } = await readJson<{ id: string; instruction?: string }>(req)
+  if (typeof id !== 'string' || id.trim() === '') {
     throw new HttpError(400, 'Missing email id')
   }
 
-  const original = await store.getEmail(gmailId)
+  const original = await store.getEmail(id)
   if (!original) throw new HttpError(404, 'Email not found')
+  const acc = await accounts.getAccount(original.accountId)
+  if (!acc) throw new HttpError(404, 'Mail account not found')
 
   let body = original.snippet
   try {
-    body = await gmail.getBody(gmailId)
+    body = await mailbox.getBody(acc, store.providerIdOf(original))
   } catch (e) {
-    console.error('body fetch failed, drafting from snippet', gmailId, e)
+    console.error('body fetch failed, drafting from snippet', id, e)
   }
 
-  const { profile, examples } = await getStyleOrBuild()
+  const { profile, examples } = await getStyleOrBuild(acc.id)
 
   const draft = await llmJson<{ subject: string; body: string }>(
     replyPrompt({
@@ -35,11 +38,12 @@ export default handle(async (req) => {
       fromEmail: original.fromEmail,
       subject: original.subject,
       date: original.receivedAt,
-      body: body.slice(0, 6000),
+      body: (body || original.subject).slice(0, 6000),
       instruction: typeof instruction === 'string' && instruction.trim() ? instruction.trim() : undefined,
       style: profile,
       examples,
     }),
+    { maxTokens: 900 },
   )
 
   if (

@@ -13,7 +13,7 @@ Everything the app persists lives in **your own Supabase project** — a databas
 | Auto-drafted replies | For reply-worthy mail, the pre-written reply text (subject + body) waits in the database until the CEO reviews it. Drafts are **never sent automatically** — sending always requires his explicit confirmation in the app |
 | Writing-style profile | A structured description of how the CEO writes (greetings, sign-offs, tone, common phrases) plus **3 short excerpts** of his sent mail used as voice examples |
 | Daily digests | Each morning's digest content and when it was emailed |
-| Gmail refresh token | The credential that lets the app access the bridge Gmail account — stored **AES-256-GCM encrypted**, with the encryption key held only in Netlify's environment variables. Someone with the database alone cannot use it |
+| Mail credentials (per account) | Gmail refresh tokens and, for directly-connected IMAP mailboxes, the IMAP/SMTP passwords — all stored **AES-256-GCM encrypted**, with the encryption key held only in Netlify's environment variables. Someone with the database alone cannot use them. They are used only to read the inbox and send what you explicitly approved |
 | Sync state | Timestamps of the last sync run |
 | App settings | Categories, digest hour, timezone, chosen LLM provider, digest/send addresses |
 

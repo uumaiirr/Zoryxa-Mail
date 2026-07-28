@@ -1,7 +1,9 @@
 import type { Config } from '@netlify/functions'
-import * as gmail from '../lib/gmail'
+import * as accounts from '../lib/accounts'
 import { handle, HttpError, json, readJson } from '../lib/http'
+import * as mailbox from '../lib/mailbox'
 import { requireSession } from '../lib/session'
+import * as store from '../lib/store'
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
@@ -32,7 +34,8 @@ export default handle(async (req) => {
     cc?: string
     subject: string
     body: string
-    replyToGmailId?: string
+    replyToId?: string
+    fromAccountId?: string
   }>(req)
 
   if (typeof body.to !== 'string' || body.to.trim() === '') {
@@ -55,27 +58,33 @@ export default handle(async (req) => {
     throw new HttpError(400, 'The message is too long to send — please shorten it')
   }
 
+  let acc: accounts.Account | null = null
   let threading: {
     inReplyTo?: string | null
     references?: string | null
     threadId?: string | null
   } = {}
-  if (typeof body.replyToGmailId === 'string' && body.replyToGmailId.trim() !== '') {
+
+  if (typeof body.replyToId === 'string' && body.replyToId.trim() !== '') {
+    const original = await store.getEmail(body.replyToId)
+    if (!original) throw new HttpError(404, 'Original email not found')
+    acc = await accounts.getAccount(original.accountId)
+    if (!acc) throw new HttpError(404, 'Mail account not found')
     try {
-      const meta = await gmail.getMeta(body.replyToGmailId)
-      threading = {
-        inReplyTo: meta.messageIdHeader,
-        references: meta.messageIdHeader,
-        threadId: meta.threadId,
-      }
+      threading = await mailbox.getThreading(acc, store.providerIdOf(original))
     } catch (e) {
-      // The original may have been deleted in Gmail since we synced it —
-      // send without threading rather than failing the whole send.
-      console.error('threading metadata unavailable, sending unthreaded', body.replyToGmailId, e)
+      // The original may be gone from the server — send unthreaded.
+      console.error('threading metadata unavailable, sending unthreaded', body.replyToId, e)
     }
+  } else {
+    if (typeof body.fromAccountId !== 'string' || body.fromAccountId.trim() === '') {
+      throw new HttpError(400, 'Choose which account to send from')
+    }
+    acc = await accounts.getAccount(body.fromAccountId)
+    if (!acc) throw new HttpError(404, 'Mail account not found')
   }
 
-  const r = await gmail.sendMail({
+  const r = await mailbox.sendFrom(acc, {
     to: body.to,
     cc: body.cc || undefined,
     subject: body.subject,
