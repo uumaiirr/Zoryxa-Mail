@@ -8,6 +8,7 @@ import { replyPrompt } from '../lib/prompts'
 import { requireSession } from '../lib/session'
 import * as store from '../lib/store'
 import { getStyleOrBuild } from '../lib/style-core'
+import { stripQuoted } from '../lib/sync-core'
 
 export default handle(async (req) => {
   if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
@@ -36,7 +37,7 @@ export default handle(async (req) => {
       fromEmail: original.fromEmail,
       subject: original.subject,
       date: original.receivedAt,
-      body: (body || original.subject).slice(0, 6000),
+      body: stripQuoted(body || original.subject).slice(0, 6000),
       instruction: typeof instruction === 'string' && instruction.trim() ? instruction.trim() : undefined,
       style: profile,
       examples,

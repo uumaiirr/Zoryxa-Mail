@@ -8,7 +8,7 @@ import EmailCard from '../components/EmailCard'
 import EmptyState from '../components/EmptyState'
 import TopBar from '../components/TopBar'
 
-const MAX_SYNC_LOOPS = 5
+const MAX_SYNC_LOOPS = 60 // keeps summarizing continuously while the app is open
 
 function messageOf(e: unknown): string {
   if (e instanceof ApiError) return e.message
@@ -69,6 +69,7 @@ export default function InboxView() {
   const activeCategoryRef = useRef<string | null>(null)
   const activeAccountRef = useRef<string | null>(null)
   const activeFolderRef = useRef<'inbox' | 'sent'>('inbox')
+  const pendingRef = useRef(0)
   const cancelledRef = useRef(false)
 
   // Refetch the full list (for counts) and the visible list for the active
@@ -107,14 +108,19 @@ export default function InboxView() {
         let loops = 0
         let refetched = false
         let result = await api.sync(force)
+        pendingRef.current = result.pending
         while (!cancelledRef.current) {
-          if (result.newEmails > 0 || result.summarized > 0) {
+          if (result.newEmails > 0 || result.summarized > 0 || result.drafted > 0) {
             await refetchEmails()
             refetched = true
           }
           if (result.pending > 0 && loops < MAX_SYNC_LOOPS) {
             loops += 1
+            // Breathe between rounds; pause when the app is in the background.
+            await new Promise((r) => setTimeout(r, 3000))
+            if (cancelledRef.current || document.hidden) break
             result = await api.sync()
+            pendingRef.current = result.pending
           } else {
             break
           }
@@ -165,6 +171,15 @@ export default function InboxView() {
   useEffect(() => {
     const quiet = () => {
       if (document.hidden || cancelledRef.current) return
+      // Keep the summarizer moving even between full sync loops.
+      if (pendingRef.current > 0) {
+        void api
+          .sync()
+          .then((r) => {
+            pendingRef.current = r.pending
+          })
+          .catch(() => {})
+      }
       void refetchEmails().catch(() => {})
     }
     const onVisible = () => {

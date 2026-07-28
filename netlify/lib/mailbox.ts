@@ -104,6 +104,48 @@ export async function getBody(acc: Account, providerId: string): Promise<string>
   return acc.kind === 'imap' ? imap.fetchBody(acc, providerId) : gmail.getBody(acc, providerId)
 }
 
+/** Live body fetch with the original HTML preserved for rich rendering. */
+export async function getBodyRich(
+  acc: Account,
+  providerId: string,
+): Promise<{ text: string; html: string | null }> {
+  return acc.kind === 'imap'
+    ? imap.fetchBodyRich(acc, providerId)
+    : gmail.getBodyRich(acc, providerId)
+}
+
+/**
+ * Batched body text fetch — IMAP reuses ONE connection for the whole batch,
+ * Gmail fetches in bounded parallel. Missing ids are simply absent.
+ */
+export async function getBodies(
+  acc: Account,
+  providerIds: string[],
+): Promise<Map<string, string>> {
+  const out = new Map<string, string>()
+  if (providerIds.length === 0) return out
+  if (acc.kind === 'imap') {
+    const rich = await imap.fetchBodies(acc, providerIds)
+    for (const [pid, b] of rich) out.set(pid, b.text)
+    return out
+  }
+  for (let i = 0; i < providerIds.length; i += META_CHUNK) {
+    const chunk = providerIds.slice(i, i + META_CHUNK)
+    const results = await Promise.all(
+      chunk.map(async (pid) => {
+        try {
+          return [pid, await gmail.getBody(acc, pid)] as const
+        } catch (e) {
+          console.error('body fetch failed', pid, e)
+          return null
+        }
+      }),
+    )
+    for (const r of results) if (r) out.set(r[0], r[1])
+  }
+  return out
+}
+
 /** Reply-threading info for one message (best effort; null when unavailable). */
 export async function getThreading(
   acc: Account,

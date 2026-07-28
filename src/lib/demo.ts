@@ -456,6 +456,7 @@ export function installDemo(): void {
         ...e,
         accountId: accountOf(e.id),
         folder: 'inbox',
+        bodyHtml: null,
         isRead: true,
         hasDraft: Boolean(drafts[e.id]),
         draft: drafts[e.id] ?? null,

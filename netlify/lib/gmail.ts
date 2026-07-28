@@ -241,8 +241,21 @@ function stripHtml(html: string): string {
     .trim()
 }
 
+/** Removes cid-markers and angle-bracket URL wrappers from plain-text mail. */
+function cleanPlainText(s: string): string {
+  return s
+    .replace(/\[cid:[^\]]+\]/gi, '')
+    .replace(/<(?:mailto|https?|tel):[^>]*>/gi, '')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+}
+
 /** Fetches the message body live from Gmail. Bodies are never persisted. */
-export async function getBody(acc: Account, id: string): Promise<string> {
+export async function getBodyRich(
+  acc: Account,
+  id: string,
+): Promise<{ text: string; html: string | null }> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const data = (await gapi(acc, `/messages/${id}?format=full`)) as any
   let text = ''
@@ -257,7 +270,13 @@ export async function getBody(acc: Account, id: string): Promise<string> {
     for (const p of part.parts ?? []) walk(p)
   }
   walk(data.payload)
-  return (text.trim() || stripHtml(html) || decodeEntities(data.snippet ?? '')).slice(0, 20000)
+  const cleanText =
+    cleanPlainText(text.trim()) || stripHtml(html) || decodeEntities(data.snippet ?? '')
+  return { text: cleanText.slice(0, 20000), html: html || null }
+}
+
+export async function getBody(acc: Account, id: string): Promise<string> {
+  return (await getBodyRich(acc, id)).text
 }
 
 export async function listSentSamples(

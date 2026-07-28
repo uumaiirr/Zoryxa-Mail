@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import type { EmailDetail } from '../../shared/types'
 import { api } from '../lib/api'
@@ -80,6 +80,32 @@ function SpinnerIcon() {
       <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="3" opacity="0.25" />
       <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
     </svg>
+  )
+}
+
+/** Renders the email's original HTML the way Spark/Gmail do — inside a
+ *  sandboxed frame (scripts blocked) that sizes itself to the content. */
+function HtmlBody({ html }: { html: string }) {
+  const ref = useRef<HTMLIFrameElement | null>(null)
+  const [height, setHeight] = useState(360)
+  const doc = `<!doctype html><html><head><meta charset="utf-8"><base target="_blank"><style>body{margin:12px;font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;font-size:14px;line-height:1.55;color:#16181d;background:#fff;word-break:break-word}img{max-width:100%!important;height:auto!important}table{max-width:100%!important}a{color:#2563EB}</style></head><body>${html}</body></html>`
+  return (
+    <iframe
+      ref={ref}
+      title="Email content"
+      sandbox="allow-same-origin allow-popups"
+      srcDoc={doc}
+      className="w-full rounded-xl bg-white border border-line"
+      style={{ height }}
+      onLoad={() => {
+        try {
+          const d = ref.current?.contentDocument
+          if (d) setHeight(Math.min(Math.max(d.body.scrollHeight + 28, 160), 5000))
+        } catch {
+          /* keep default height */
+        }
+      }}
+    />
   )
 }
 
@@ -338,23 +364,31 @@ export default function EmailDetailView() {
               </svg>
             </button>
 
-            {/* Full email */}
+            {/* Full email — original HTML when the message has it */}
             <div className="card p-4 mt-3">
               <div className="text-xs font-semibold uppercase tracking-wide text-muted">Full email</div>
-              <div className={bodyIsLong && !bodyExpanded ? 'mt-2 max-h-48 overflow-hidden relative' : 'mt-2'}>
-                <div className="whitespace-pre-wrap text-sm leading-relaxed break-words">{detail.body}</div>
-                {bodyIsLong && !bodyExpanded && (
-                  <div className="absolute inset-x-0 bottom-0 h-14 bg-gradient-to-t from-paper to-transparent" aria-hidden="true" />
-                )}
-              </div>
-              {bodyIsLong && (
-                <button
-                  type="button"
-                  className="mt-1 w-full py-2.5 text-sm font-semibold text-navy"
-                  onClick={() => setBodyExpanded((v) => !v)}
-                >
-                  {bodyExpanded ? 'Show less' : 'Show more'}
-                </button>
+              {detail.bodyHtml ? (
+                <div className="mt-2 -mx-1">
+                  <HtmlBody html={detail.bodyHtml} />
+                </div>
+              ) : (
+                <>
+                  <div className={bodyIsLong && !bodyExpanded ? 'mt-2 max-h-48 overflow-hidden relative' : 'mt-2'}>
+                    <div className="whitespace-pre-wrap text-sm leading-relaxed break-words">{detail.body}</div>
+                    {bodyIsLong && !bodyExpanded && (
+                      <div className="absolute inset-x-0 bottom-0 h-14 bg-gradient-to-t from-paper to-transparent" aria-hidden="true" />
+                    )}
+                  </div>
+                  {bodyIsLong && (
+                    <button
+                      type="button"
+                      className="mt-1 w-full py-2.5 text-sm font-semibold text-navy"
+                      onClick={() => setBodyExpanded((v) => !v)}
+                    >
+                      {bodyExpanded ? 'Show less' : 'Show more'}
+                    </button>
+                  )}
+                </>
               )}
             </div>
 

@@ -6,8 +6,8 @@ import * as mailbox from './mailbox'
 import { replyPrompt, summarizeBatchPrompt, type SummarizeInput } from './prompts'
 import * as store from './store'
 
-const BATCH_SIZE = 5 // emails per LLM call — small enough for free-tier TPM limits
-const MAX_BATCHES_PER_RUN = 2 // callers re-invoke while `pending` > 0
+const BATCH_SIZE = 8 // emails per LLM call
+const MAX_BATCHES_PER_RUN = 3 // callers re-invoke while `pending` > 0
 const MAX_AUTO_DRAFTS_PER_RUN = 2 // reply drafts written per sync pass
 const DEBOUNCE_MS = 3 * 60_000
 
@@ -29,6 +29,23 @@ const CATEGORY_PALETTE = [
   '#06B6D4', '#EC4899', '#84CC16', '#F97316', '#6366F1',
 ]
 const MAX_CATEGORIES = 14
+
+/** Cuts quoted reply-chains so the AI reads THIS message, not the whole trace. */
+export function stripQuoted(text: string): string {
+  const patterns = [
+    /^On .{0,120} wrote:\s*$/m,
+    /^-{2,}\s*(Original|Forwarded) Message/im,
+    /^From:\s.+\r?\n(Sent|Date):\s/m,
+    /^_{10,}\s*$/m,
+  ]
+  let cut = text.length
+  for (const re of patterns) {
+    const m = re.exec(text)
+    if (m && m.index < cut) cut = m.index
+  }
+  const head = text.slice(0, cut).trim()
+  return head.length >= 60 ? head : text
+}
 
 function slugify(s: string): string {
   return s
@@ -148,25 +165,38 @@ export async function runSync(
     let categoriesDirty = false
     const today = todayIn(settings.timezone)
 
-    const inputs: SummarizeInput[] = []
+    // Fetch every body for the batch efficiently: one IMAP connection per
+    // account, bounded parallel for Gmail.
+    const bodiesByRow = new Map<string, string>()
+    const rowsByAcc = new Map<string, typeof pendingRows>()
     for (const row of pendingRows) {
-      let body = row.snippet
-      const acc = accById.get(row.accountId)
-      if (acc) {
-        try {
-          body = await mailbox.getBody(acc, store.providerIdOf(row))
-        } catch (e) {
-          console.error('body fetch failed, using snippet', row.id, e)
-        }
-      }
-      inputs.push({
-        index: inputs.length,
-        from: `${row.fromName} <${row.fromEmail}>`,
-        subject: row.subject,
-        date: row.receivedAt,
-        body: (body || row.subject).slice(0, 3500),
-      })
+      const list = rowsByAcc.get(row.accountId) ?? []
+      list.push(row)
+      rowsByAcc.set(row.accountId, list)
     }
+    for (const [accId, rows] of rowsByAcc) {
+      const acc = accById.get(accId)
+      if (!acc) continue
+      try {
+        const bodies = await mailbox.getBodies(
+          acc,
+          rows.map((r) => store.providerIdOf(r)),
+        )
+        for (const r of rows) {
+          const b = bodies.get(store.providerIdOf(r))
+          if (b) bodiesByRow.set(r.id, b)
+        }
+      } catch (e) {
+        console.error('batch body fetch failed', acc.email, e)
+      }
+    }
+    const inputs: SummarizeInput[] = pendingRows.map((row, i) => ({
+      index: i,
+      from: `${row.fromName} <${row.fromEmail}>`,
+      subject: row.subject,
+      date: row.receivedAt,
+      body: stripQuoted(bodiesByRow.get(row.id) || row.snippet || row.subject).slice(0, 3500),
+    }))
 
     try {
       const out = await llmJson<{ results: SummaryOut[] } | SummaryOut[]>(
@@ -256,7 +286,7 @@ async function autoDraftReplies(accById: Map<string, accounts.Account>): Promise
             fromEmail: email.fromEmail,
             subject: email.subject,
             date: email.receivedAt,
-            body: (body || email.subject).slice(0, 6000),
+            body: stripQuoted(body || email.subject).slice(0, 6000),
             style: stored?.profile ?? null,
             examples: stored?.examples ?? [],
           }),

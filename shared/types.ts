@@ -60,7 +60,8 @@ export interface EmailSummary {
 }
 
 export interface EmailDetail extends EmailSummary {
-  body: string // fetched live from Gmail, never persisted
+  body: string // fetched live from the mail server, never persisted
+  bodyHtml: string | null // original HTML for rich rendering, when the email has it
   draft: { subject: string; body: string } | null // pre-written reply, if any
 }
 

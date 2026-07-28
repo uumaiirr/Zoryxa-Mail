@@ -17,8 +17,11 @@ export default handle(async (req, context) => {
 
   // Bodies are never persisted — always fetched live from the mailbox.
   let body: string
+  let bodyHtml: string | null = null
   try {
-    body = await mailbox.getBody(acc, store.providerIdOf(summary))
+    const rich = await mailbox.getBodyRich(acc, store.providerIdOf(summary))
+    body = rich.text || summary.snippet
+    bodyHtml = rich.html ? rich.html.slice(0, 400_000) : null
   } catch {
     body = summary.snippet
   }
@@ -36,7 +39,7 @@ export default handle(async (req, context) => {
     console.error('getDraft failed', id, e)
   }
 
-  const detail: EmailDetail = { ...summary, body, isRead: true, draft }
+  const detail: EmailDetail = { ...summary, body, bodyHtml, isRead: true, draft }
   return json(detail)
 })
 

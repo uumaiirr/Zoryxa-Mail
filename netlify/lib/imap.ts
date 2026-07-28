@@ -119,9 +119,32 @@ function stripHtml(html: string): string {
     .trim()
 }
 
+export interface RichBody {
+  text: string
+  html: string | null
+}
+
+/** Removes cid-markers and angle-bracket URL wrappers from plain-text mail. */
+export function cleanPlainText(s: string): string {
+  return s
+    .replace(/\[cid:[^\]]+\]/gi, '')
+    .replace(/<(?:mailto|https?|tel):[^>]*>/gi, '')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function parsedToRich(parsed: any): RichBody {
+  const html = typeof parsed.html === 'string' && parsed.html ? parsed.html : null
+  const text =
+    cleanPlainText((parsed.text || '').trim()) || (html ? stripHtml(html) : '')
+  return { text: text.slice(0, 20000), html }
+}
+
 /** Downloads and parses one message body (never persisted). 's:'-prefixed
  *  provider ids live in the Sent mailbox. */
-export async function fetchBody(acc: Account, providerId: string): Promise<string> {
+export async function fetchBodyRich(acc: Account, providerId: string): Promise<RichBody> {
   const isSent = providerId.startsWith('s:')
   const uid = isSent ? providerId.slice(2) : providerId
   const client = clientFor(acc)
@@ -133,15 +156,59 @@ export async function fetchBody(acc: Account, providerId: string): Promise<strin
     try {
       const msg = await client.fetchOne(uid, { source: true }, { uid: true })
       if (!msg || !msg.source) throw new HttpError(404, 'Email not found on the mail server')
-      const parsed = await simpleParser(msg.source)
-      const text = (parsed.text || '').trim() || stripHtml(String(parsed.html || ''))
-      return text.slice(0, 20000)
+      return parsedToRich(await simpleParser(msg.source))
     } finally {
       lock.release()
     }
   } finally {
     await client.logout().catch(() => {})
   }
+}
+
+export async function fetchBody(acc: Account, providerId: string): Promise<string> {
+  return (await fetchBodyRich(acc, providerId)).text
+}
+
+/**
+ * Batched body fetch over ONE connection — the difference between summarizing
+ * eight emails in seconds versus opening eight TLS sessions.
+ */
+export async function fetchBodies(
+  acc: Account,
+  providerIds: string[],
+): Promise<Map<string, RichBody>> {
+  const out = new Map<string, RichBody>()
+  if (providerIds.length === 0) return out
+  const groups = {
+    inbox: providerIds.filter((p) => !p.startsWith('s:')),
+    sent: providerIds.filter((p) => p.startsWith('s:')),
+  }
+  const client = clientFor(acc)
+  await client.connect()
+  try {
+    for (const [g, ids] of Object.entries(groups) as ['inbox' | 'sent', string[]][]) {
+      if (ids.length === 0) continue
+      const path = g === 'sent' ? await sentMailboxPath(client) : 'INBOX'
+      if (!path) continue
+      const lock = await client.getMailboxLock(path)
+      try {
+        for (const pid of ids) {
+          try {
+            const uid = g === 'sent' ? pid.slice(2) : pid
+            const msg = await client.fetchOne(uid, { source: true }, { uid: true })
+            if (msg && msg.source) out.set(pid, parsedToRich(await simpleParser(msg.source)))
+          } catch (e) {
+            console.error('imap body fetch failed', pid, e)
+          }
+        }
+      } finally {
+        lock.release()
+      }
+    }
+  } finally {
+    await client.logout().catch(() => {})
+  }
+  return out
 }
 
 /** Recent messages from the Sent mailbox (for style learning). [] if none found. */
